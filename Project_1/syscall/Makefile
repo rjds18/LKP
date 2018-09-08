@@ -1,0 +1,17 @@
+CUR_DIR := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
+CC = gcc
+CFLAGS += -g -O2 -Werror -Wall
+
+make:
+	$(CC) $(wildcard *.c) -o q2
+
+
+SRC_FILES = $(wildcard *.c)
+
+EXE_FILES = $(SRC_FILES:.c=)
+
+clean:
+	rm -rf $(EXE_FILES)
+
+
+.PHONY: all clean

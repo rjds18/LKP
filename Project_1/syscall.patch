@@ -1,0 +1,154 @@
+diff --git a/arch/x86/entry/syscalls/syscall_64.tbl b/arch/x86/entry/syscalls/syscall_64.tbl
+index f0b1709a5ffb..d9d2965402e2 100644
+--- a/arch/x86/entry/syscalls/syscall_64.tbl
++++ b/arch/x86/entry/syscalls/syscall_64.tbl
+@@ -343,7 +343,7 @@
+ 332	common	statx			__x64_sys_statx
+ 333	common	io_pgetevents		__x64_sys_io_pgetevents
+ 334	common	rseq			__x64_sys_rseq
+-
++335	common	s2_encrypt		__x64_sys_s2_encrypt
+ #
+ # x32-specific system call numbers start at 512 to avoid cache impact
+ # for native 64-bit operation. The __x32_compat_sys stubs are created
+diff --git a/include/linux/syscalls.h b/include/linux/syscalls.h
+index 5c1a0933768e..11d0219d9898 100644
+--- a/include/linux/syscalls.h
++++ b/include/linux/syscalls.h
+@@ -81,6 +81,7 @@ union bpf_attr;
+ #include <linux/unistd.h>
+ #include <linux/quota.h>
+ #include <linux/key.h>
++#include <linux/personality.h>
+ #include <trace/syscall.h>
+ 
+ #ifdef CONFIG_ARCH_HAS_SYSCALL_WRAPPER
+@@ -506,9 +507,9 @@ asmlinkage long sys_sync_file_range(int fd, loff_t offset, loff_t nbytes,
+ /* fs/timerfd.c */
+ asmlinkage long sys_timerfd_create(int clockid, int flags);
+ asmlinkage long sys_timerfd_settime(int ufd, int flags,
+-				    const struct itimerspec __user *utmr,
+-				    struct itimerspec __user *otmr);
+-asmlinkage long sys_timerfd_gettime(int ufd, struct itimerspec __user *otmr);
++				    const struct __kernel_itimerspec __user *utmr,
++				    struct __kernel_itimerspec __user *otmr);
++asmlinkage long sys_timerfd_gettime(int ufd, struct __kernel_itimerspec __user *otmr);
+ 
+ /* fs/utimes.c */
+ asmlinkage long sys_utimensat(int dfd, const char __user *filename,
+@@ -573,10 +574,10 @@ asmlinkage long sys_timer_create(clockid_t which_clock,
+ 				 struct sigevent __user *timer_event_spec,
+ 				 timer_t __user * created_timer_id);
+ asmlinkage long sys_timer_gettime(timer_t timer_id,
+-				struct itimerspec __user *setting);
++				struct __kernel_itimerspec __user *setting);
+ asmlinkage long sys_timer_getoverrun(timer_t timer_id);
+ asmlinkage long sys_timer_settime(timer_t timer_id, int flags,
+-				const struct itimerspec __user *new_setting,
++				const struct __kernel_itimerspec __user *new_setting,
+ 				struct itimerspec __user *old_setting);
+ asmlinkage long sys_timer_delete(timer_t timer_id);
+ asmlinkage long sys_clock_settime(clockid_t which_clock,
+@@ -1282,4 +1283,16 @@ static inline long ksys_truncate(const char __user *pathname, loff_t length)
+ 	return do_sys_truncate(pathname, length);
+ }
+ 
++static inline unsigned int ksys_personality(unsigned int personality)
++{
++	unsigned int old = current->personality;
++
++	if (personality != 0xffffffff)
++		set_personality(personality);
++
++	return old;
++}
++
++asmlinkage long sys_s2_encrypt(const char __user *strval, int keyval); 
++
+ #endif
+diff --git a/kernel/Makefile b/kernel/Makefile
+index 04bc07c2b42a..6470c64e234d 100644
+--- a/kernel/Makefile
++++ b/kernel/Makefile
+@@ -42,7 +42,7 @@ obj-y += irq/
+ obj-y += rcu/
+ obj-y += livepatch/
+ obj-y += dma/
+-
++obj-y += q2/
+ obj-$(CONFIG_CHECKPOINT_RESTORE) += kcmp.o
+ obj-$(CONFIG_FREEZER) += freezer.o
+ obj-$(CONFIG_PROFILING) += profile.o
+@@ -123,7 +123,7 @@ targets += config_data.gz
+ $(obj)/config_data.gz: $(KCONFIG_CONFIG) FORCE
+ 	$(call if_changed,gzip)
+ 
+-      filechk_ikconfiggz = (echo "static const char kernel_config_data[] __used = MAGIC_START"; cat $< | scripts/basic/bin2c; echo "MAGIC_END;")
++      filechk_ikconfiggz = (echo "static const char kernel_config_data[] __used = MAGIC_START"; cat $< | scripts/bin2c; echo "MAGIC_END;")
+ targets += config_data.h
+ $(obj)/config_data.h: $(obj)/config_data.gz FORCE
+ 	$(call filechk,ikconfiggz)
+diff --git a/kernel/q2/Makefile b/kernel/q2/Makefile
+new file mode 100644
+index 000000000000..6e50d3bdfde6
+--- /dev/null
++++ b/kernel/q2/Makefile
+@@ -0,0 +1 @@
++obj-y := q2.o
+diff --git a/kernel/q2/q2.c b/kernel/q2/q2.c
+new file mode 100644
+index 000000000000..33f3f50fc84b
+--- /dev/null
++++ b/kernel/q2/q2.c
+@@ -0,0 +1,48 @@
++#include <linux/kernel.h>
++#include <linux/uaccess.h>
++#include <linux/slab.h>
++#include <linux/syscalls.h>
++
++SYSCALL_DEFINE2(s2_encrypt, const char __user *, strval, int, keyval)
++{
++  unsigned long length;
++  unsigned int retval;
++  char *user_data;
++  char *enc_data;
++  unsigned int encrypt_key = 0;
++  int i = 0;
++  
++  encrypt_key = keyval;
++  length = strnlen_user(strval, 1024);
++  user_data = (char *)kmalloc(length, GFP_KERNEL);
++    
++  if(encrypt_key > 0 && encrypt_key < 6)
++    {
++      printk("Hello World, length is: %d and key is %d \n", length, encrypt_key);
++      retval = copy_from_user(user_data, strval, length);
++      if (retval == 0)
++	{
++	  printk("Yay\n");
++	}
++      else
++	{
++	  printk("Boo\n");
++	  return -EFAULT;
++	}
++    
++      while(user_data[i]!='\0') 
++	{
++	  user_data[i] += encrypt_key;
++	  i++;
++	  
++	}
++      printk("String is %s and Digit is %d\n", user_data, encrypt_key);
++      kfree(user_data);      
++      return 0;
++    }
++  else
++    {
++      printk("Out of bounds cause of %d\n", encrypt_key);
++      return -EINVAL;
++    }
++}
+diff --git a/kernel/q2/q2.h b/kernel/q2/q2.h
+new file mode 100644
+index 000000000000..e69de29bb2d1

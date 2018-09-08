@@ -1,0 +1,48 @@
+diff --git a/net/socket.c b/net/socket.c
+index 8c24d5dc4bc8..93ac53efbcc8 100644
+--- a/net/socket.c
++++ b/net/socket.c
+@@ -1555,7 +1555,8 @@ int __sys_accept4(int fd, struct sockaddr __user *upeer_sockaddr,
+ 	struct file *newfile;
+ 	int err, len, newfd, fput_needed;
+ 	struct sockaddr_storage address;
+-
++	printk("sys_accept4 is getting called via system call handler\n");
++	
+ 	if (flags & ~(SOCK_CLOEXEC | SOCK_NONBLOCK))
+ 		return -EINVAL;
+ 
+@@ -1632,13 +1633,13 @@ int __sys_accept4(int fd, struct sockaddr __user *upeer_sockaddr,
+ SYSCALL_DEFINE4(accept4, int, fd, struct sockaddr __user *, upeer_sockaddr,
+ 		int __user *, upeer_addrlen, int, flags)
+ {
+-	return __sys_accept4(fd, upeer_sockaddr, upeer_addrlen, flags);
++        return __sys_accept4(fd, upeer_sockaddr, upeer_addrlen, flags);
+ }
+ 
+ SYSCALL_DEFINE3(accept, int, fd, struct sockaddr __user *, upeer_sockaddr,
+ 		int __user *, upeer_addrlen)
+ {
+-	return __sys_accept4(fd, upeer_sockaddr, upeer_addrlen, 0);
++        return __sys_accept4(fd, upeer_sockaddr, upeer_addrlen, 0);
+ }
+ 
+ /*
+@@ -1658,7 +1659,8 @@ int __sys_connect(int fd, struct sockaddr __user *uservaddr, int addrlen)
+ 	struct socket *sock;
+ 	struct sockaddr_storage address;
+ 	int err, fput_needed;
+-
++	printk("sys_connect is getting called via syscall handler\n");
++	
+ 	sock = sockfd_lookup_light(fd, &err, &fput_needed);
+ 	if (!sock)
+ 		goto out;
+@@ -1682,6 +1684,7 @@ int __sys_connect(int fd, struct sockaddr __user *uservaddr, int addrlen)
+ SYSCALL_DEFINE3(connect, int, fd, struct sockaddr __user *, uservaddr,
+ 		int, addrlen)
+ {
++  
+ 	return __sys_connect(fd, uservaddr, addrlen);
+ }
+ 

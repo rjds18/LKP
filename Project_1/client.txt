@@ -1,0 +1,11 @@
+---------------Documents for my reference-------------
+
+socket() = creates an unbound socket in a communications domain.
+	 = returns a FILE DESCRIPTOR which can be used later func
+	 = that operates on sockets.
+
+	 > takes in three arguments:
+	   - domain = specifies the communications domain in which a socket to be created
+	   - type = specifies the type of socket to be created 
+	   - protocol = specifies a particular protocol to be used
+	     	      = if 0 is used, then this uses an unspecified default protocol

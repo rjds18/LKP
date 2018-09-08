@@ -1,0 +1,1 @@
+asmlinkage long sys_s2_encrypt(const char __user *strval, int keyval);
