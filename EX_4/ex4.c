@@ -29,17 +29,17 @@ MODULE_DESCRIPTION("LKP Exercise 4");
 module_param(int_str, charp, S_IRUSR | S_IRGRP | S_IROTH);
 
 /* [X3: point 1]
- * Explain following in here.
+ * this is basically describing what argument that this module can take.
  */
 MODULE_PARM_DESC(int_str, "A comma-separated list of integers");
 
 /* [X4: point 1]
- * Explain following in here.
+ * this basically creates a list_head titled "mylist"
  */
 static LIST_HEAD(mylist);
 
 /* [X5: point 1]
- * Explain following in here.
+ * creating an internal structure  (key data structure)
  */
 struct entry {
 	int val;
@@ -55,6 +55,7 @@ static int store_value(int val)
 	 * Otherwise (e.g., memory allocation failure),
 	 * return corresponding error code in error.h (e.g., -ENOMEM).
 	 */
+ 
 }
 
 static void test_linked_list(void)
@@ -80,7 +81,9 @@ static int parse_params(void)
 
 
 	/* [X9: point 1]
-	 * Explain following in here.
+	 * kstrdup is used to allocate space for and copy an existing string. In this particular 
+	 * case, it is understanding the input pointer (int_str) and copying that into the other
+	 * character pointer called params. This is done so that we can use params to parse.
 	 */
 	params = kstrdup(int_str, GFP_KERNEL);
 	if (!params)
@@ -88,20 +91,29 @@ static int parse_params(void)
 	orig = params;
 
 	/* [X10: point 1]
-	 * Explain following in here.
+	 * this particular while condition is simply dereferencing the character pointer input
+	 * which was obtained from int_str and looping until comma doesn't appear anymore.
 	 */
 	while ((p = strsep(&params, ",")) != NULL) {
 		if (!*p)
 			continue;
 		/* [X11: point 1]
-		 * Explain following in here.
+		 * kstrtoint is used to convert a string to int (str_to_int). basically this proj's
+		 * goal is to parse string per comma and storing int into that value, so this is
+		 * the part where that magic happens. It will convert particular string to int
+		 * and then when it is successful, we will store that value into the val input
+		 * which was previously initialized. However, if (err) is raised to true, then
+		 * we will break out of the loop as we have detected the error. kstrtoint should
+		 * return 0 on success.
 		 */
 		err = kstrtoint(p, 0, &val);
 		if (err)
 			break;
 
 		/* [X12: point 1]
-		 * Explain following in here.
+		 * Assuming everything happened well previosuly , store_value function will 
+		 * copy the value variable into the entry structure we defined before. Otherwise
+		 * if something bad happens, we will break out of the loop and throw an error.
 		 */
 		err = store_value(val);
 		if (err)
@@ -109,7 +121,7 @@ static int parse_params(void)
 	}
 
 	/* [X13: point 1]
-	 * Explain following in here.
+	 * kfree is used to free up the allocated memory (remove dangling pointers)
 	 */
 	kfree(orig);
 	return err;
@@ -118,7 +130,8 @@ static int parse_params(void)
 static void run_tests(void)
 {
 	/* [X14: point 1]
-	 * Explain following in here.
+	 * this will run the function test_linked_list() function in order to run tests for 
+	 * our defined linked list.
 	 */
 	test_linked_list();
 }
@@ -126,7 +139,8 @@ static void run_tests(void)
 static void cleanup(void)
 {
 	/* [X15: point 1]
-	 * Explain following in here.
+	 * printk simply prints the message into the dmesg for the debugging purposes and KERN_INFO
+	 * is an informational message (one of the eight different log levels)
 	 */
 	printk(KERN_INFO "\nCleaning up...\n");
 
@@ -138,7 +152,8 @@ static int __init ex4_init(void)
 	int err = 0;
 
 	/* [X16: point 1]
-	 * Explain following in here.
+	 * this condition checks whether during the insmod phase, int_str parameter is inserted
+	 * or not, if not inserted, then it throws this error.
 	 */
 	if (!int_str) {
 		printk(KERN_INFO "Missing \'int_str\' parameter, exiting\n");
@@ -146,19 +161,22 @@ static int __init ex4_init(void)
 	}
 
 	/* [X17: point 1]
-	 * Explain following in here.
+	 * as insmod is now initialized, we will call our previously defined parse_params function
+	 * and if this returns anything other than 0 (which means successful), we will forcefully
+	 * change the jump into "out" macro which is defined below (basically exiting)
 	 */
 	err = parse_params();
 	if (err)
 		goto out;
 
 	/* [X18: point 1]
-	 * Explain following in here.
+	 * We will now run the tests to check the linked list.
 	 */
 	run_tests();
 out:
 	/* [X19: point 1]
-	 * Explain following in here.
+	 * In the case we get an error from the previous functions, we will forcefully jump into
+	 * this branch where we will clean up the mess and return an err variable to debug
 	 */
 	cleanup();
 	return err;
@@ -167,17 +185,17 @@ out:
 static void __exit ex4_exit(void)
 {
 	/* [X20: point 1]
-	 * Explain following in here.
+	 * this is needed in order to be called when rmmod is used to remove the module.
 	 */
 	return;
 }
 
 /* [X21: point 1]
- * Explain following in here.
+ * macro which will inititate the kernel module upon getting called insmod
  */
 module_init(ex4_init);
 
 /* [X22: point 1]
- * Explain following in here.
+ * macro which will exit / remove kernel module upon getting called via rmmod
  */
 module_exit(ex4_exit);

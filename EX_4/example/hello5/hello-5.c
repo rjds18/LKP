@@ -26,7 +26,7 @@ static int arr_argc = 0;
  */
 
 module_param(myshort, short, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
-MODULE_PARM_DESC(myshort, "A short integer");
+MODULE_PARM_DESC(myshort, "testing short");
 module_param(myint, int, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 MODULE_PARM_DESC(myint, "An integer");
 module_param(mylong, long, S_IRUSR);
