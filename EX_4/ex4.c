@@ -6,14 +6,25 @@
 static char *int_str;
 
 /* [X1: point 1]
- * Explain following in here.
+ * When system programmers want to add new functions to the Linux kernel, instead of bloating 
+ * the codespace with seldomly used functions, they tend to rely on the concept of Modules.
+ * There are several ethical practices which need to be followed in order to prevent tainting
+ * the kernel, to enforce this (use GPL!), each module developer is required to specify in their 
+ * module, the source code the type of their used license > hence MODULE_LICENSE is used.
+ * MODULE_AUTHOR and MODULE_DESCRIPTION are additional information to describe who wrote this 
+ * module and description for the others to read.
  */
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("[YOUR NAME]");
 MODULE_DESCRIPTION("LKP Exercise 4");
 
 /* [X2: point 1]
- * Explain following in here.
+ * Unlike typical programming where we use argc / argv to pass command line arguments, in this case
+ * we have to use the module_param() macro. 
+ * The format in this case is:
+ * 1st parameter = parameter name
+ * 2nd parameter = data type (character pointer = charp)
+ * 3rd parameter = permissions bits.
  */
 module_param(int_str, charp, S_IRUSR | S_IRGRP | S_IROTH);
 
