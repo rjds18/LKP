@@ -54,7 +54,7 @@ struct entry {
 
 static int store_value(int val)
 {
-  printk("Hello World\n");
+
 	/* [X6: point 10]
 	 * Allocate a struct entry of which val is val
 	 * and add it to the tail of mylist.
@@ -62,7 +62,10 @@ static int store_value(int val)
 	 * Otherwise (e.g., memory allocation failure),
 	 * return corresponding error code in error.h (e.g., -ENOMEM).
 	 */
- 
+  struct entry *ex4_list;
+  ex4_list = kmalloc(sizeof(*ex4_list), GFP_KERNEL);
+  ex4_list->val = val;
+  list_add_tail(&ex4_list->list, &mylist);
 }
 
 static void test_linked_list(void)
@@ -70,6 +73,14 @@ static void test_linked_list(void)
 	/* [X7: point 10]
 	 * Print out value of all entries in mylist.
 	 */
+  struct list_head *position = NULL;
+  struct entry *dataptr = NULL;
+  list_for_each( position, &mylist)
+    {
+      dataptr = list_entry(position, struct entry, list);
+      printk("data in the list = %d\n", dataptr->val);
+    }
+  
 }
 
 
@@ -78,6 +89,16 @@ static void destroy_linked_list_and_free(void)
 	/* [X8: point 10]
 	 * Free all entries in mylist.
 	 */
+  struct list_head *pos;
+  struct list_head *next;
+  struct entry *data;
+  list_for_each_safe(pos, next, &mylist)
+    {
+      data = list_entry(pos, struct entry, list);
+      list_del(pos);
+      kfree(data);
+    }
+  
 }
 
 

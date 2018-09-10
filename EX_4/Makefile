@@ -38,9 +38,10 @@ all: $(MODULE)
 	@$(CC) -c $< -o $@
 
 ## [M7: point 1]
-#  creating rule for when MODULE name is called per make command.
+#  creating rule for when make is called.
 #  ...
 $(MODULE):
+	@echo "Hi" $(KERNELDIR)
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) modules
 
 ## [M8: point 1]
