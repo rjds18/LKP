@@ -2,6 +2,8 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/slab.h>
+#include <linux/list.h>
+#include <linux/errno.h>
 
 static char *int_str;
 
@@ -35,11 +37,15 @@ MODULE_PARM_DESC(int_str, "A comma-separated list of integers");
 
 /* [X4: point 1]
  * this basically creates a list_head titled "mylist"
+ * this is defined in the list.h as this:
+ * #define LIST_HEAD(name) \ 
+ *        struct list_head name = LIST_HEAD_INIT(name)
  */
 static LIST_HEAD(mylist);
 
 /* [X5: point 1]
- * creating an internal structure  (key data structure)
+ * creating an internal structure of entry which will contain the (val) for each string's value
+ * and store the list of all parsed strings.
  */
 struct entry {
 	int val;
@@ -48,6 +54,7 @@ struct entry {
 
 static int store_value(int val)
 {
+  printk("Hello World\n");
 	/* [X6: point 10]
 	 * Allocate a struct entry of which val is val
 	 * and add it to the tail of mylist.
