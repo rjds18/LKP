@@ -1,0 +1,5 @@
+Hi /lib/modules/4.18.0+/build
+make -C /lib/modules/4.18.0+/build M=/home/jjang3/LKP/Project_2 modules
+make[1]: Entering directory '/home/jjang3/linux'
+  CC [M]  /home/jjang3/LKP/Project_2/proj2.o
+make[1]: Leaving directory '/home/jjang3/linux'
