@@ -76,6 +76,7 @@ static void rb_tree_insert(int value)
   struct mystruct *target = kmalloc(sizeof(*target), GFP_KERNEL);
   target->data = value;
   insert_rb_tree(&root, target);
+
 }
 
 struct mystruct rb_tree_view(struct rb_root *root)
@@ -85,6 +86,7 @@ struct mystruct rb_tree_view(struct rb_root *root)
     {
       struct mystruct *temp = rb_entry(iternode, struct mystruct, rbnode);
       printk("key=%d\n", temp->data);
+
     }
 }
 
@@ -96,6 +98,7 @@ static void rb_tree_remove(struct rb_root *root)
     {
       struct mystruct *temp = rb_entry(iternode, struct mystruct, rbnode);
       rb_erase(&(temp->rbnode), root);
+      kfree(temp);
     }
 
 }
@@ -116,6 +119,7 @@ static int __init test_init(void)
   rb_tree_insert(17);
   rb_tree_insert(3);
   rb_tree_view(&root);
+  rb_tree_remove(&root);
   
 }
 
