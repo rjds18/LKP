@@ -1,0 +1,4 @@
+sudo insmod ex.ko int_str=1,2,3,4,5
+cat /proc/proj2
+
+echo "make sure to rmmod proj2 afterwards"

@@ -7,7 +7,7 @@
 #include <linux/module.h>
 #include <linux/seq_file.h>
 #include <linux/proc_fs.h>
-#include <linux/hashtable.h>
+
 #include <linux/types.h>
 
 MODULE_LICENSE("GPL");
@@ -26,26 +26,12 @@ struct entry {
   struct list_head list;
 };
 
-struct hentry {
-  int val;
-  struct hlist_node hashlist;
-};
-
 static int store_value(int val)
 {
   struct entry *prj2_list;
   prj2_list = kmalloc(sizeof(*prj2_list), GFP_KERNEL);
   prj2_list->val = val;
   list_add_tail(&prj2_list->list, &mylist);
-}
-
-static int store_value_hash(int val)
-{
-  struct hentry *prj2_hlist;
-  prj2_hlist = kmalloc(sizeof(*prj2_hlist), GFP_KERNEL);
-  prj2_hlist->val = val;
-  hash_add(myHash, prj2_hlist->next, prj2_hlist->val);
-  //prj2_hlist->hashlist;  
 }
 
 static int parse_params(void)
@@ -117,7 +103,6 @@ static int proj2_proc_show(struct seq_file *m, void *v)
     printk(KERN_INFO "Missing \'int_str\' parameter, exiting \n");
     return -1;
   }
-  DEFINE_HASHTABLE(myHash, 5);
   printk("Hello v2!\n");
   err = parse_params();
   if (err)
