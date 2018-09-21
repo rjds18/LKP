@@ -249,17 +249,7 @@ static int proj2_proc_show(struct seq_file *m, void *v)
   err = parse_params();
   if (err)
     goto out;
-  // run_tests();
-  struct list_head *position = NULL;
-  struct entry *dataptr = NULL;
-  printk("Linked List = ");
-  list_for_each(position, &mylist)
-    {
-      dataptr = list_entry(position, struct entry, list);
-      //(KERN_CONT "%d ", dataptr->val);
-      seq_printf(m, "%d ", dataptr->val);
-    }
-
+  run_tests();
   
 out:
   cleanup();
