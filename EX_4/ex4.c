@@ -96,8 +96,11 @@ static void destroy_linked_list_and_free(void)
     {
       data = list_entry(pos, struct entry, list);
       list_del(pos);
+      
       kfree(data);
+      kfree(pos);
     }
+
   
 }
 

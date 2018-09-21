@@ -1,0 +1,68 @@
+#include <linux/module.h>
+#include <linux/kernel.h>
+#include <linux/init.h>
+#include <linux/radix-tree.h>
+#include <linux/slab.h>
+#include <linux/gfp.h>
+
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Jae-Won");
+
+RADIX_TREE(radix_tree, GFP_NOIO);
+
+struct mystruct {
+  struct radix_tree_node radix_node;
+  int data;
+};
+
+static int radix_insert(int key)
+{
+  struct mystruct *rnode;
+  rnode = kmalloc(sizeof(*rnode), GFP_KERNEL);
+  rnode-> data = key;
+  radix_tree_insert(&radix_tree, key, rnode);
+  return 0;
+}
+static void radix_remove(int key)
+{
+  radix_tree_delete(&radix_tree, key);
+}
+
+static struct mystruct *radix_lookup(struct radix_tree_root *radix_tree, int key)
+{
+  return radix_tree_lookup(radix_tree, key);
+}
+
+static int __init test_init(void)
+{
+  int err;
+  
+  struct radix_tree_iter iter;
+  void **slot;
+  struct mystruct *temp = kmalloc(sizeof(*temp), GFP_KERNEL);
+  int i;
+  err = radix_insert(1);
+  err = radix_insert(2);
+  radix_remove(1);
+  for (int i = 0; i < 5; i++)
+  {
+  temp = radix_lookup(&radix_tree, i);
+  }
+  if(temp == NULL)
+    {
+	  return -ENOMEM;
+    }
+  else{ 
+    printk("here is the digit: %d\n", temp->data);
+  }
+  return 0;
+}
+
+static void __exit test_exit(void)
+{
+  printk(KERN_INFO "Goodbye\n");
+}
+
+module_init(test_init);
+module_exit(test_exit);
