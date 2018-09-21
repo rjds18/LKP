@@ -122,7 +122,7 @@ static int parse_params(void)
   kfree(orig);
   return err;
 }
-
+/*
 static void test_linked_list(void)
 {
   struct list_head *position = NULL;
@@ -174,7 +174,7 @@ static void view_radix(void)
      }
    }
 }
-
+*/
 
 static void destroy_linked_list_and_free(void)
 {
@@ -220,16 +220,17 @@ static void radix_remove(void)
       radix_tree_delete(&radix_tree, iter.index);
     }
 }
-
+/*
 static void run_tests(void)
 {
-  test_linked_list();
+    test_linked_list();
   test_hash_table();
   rb_tree_view(&root);
   view_radix();
+  
   // add other tests here
 }
-
+*/
 static void cleanup(void)
 {
   printk(KERN_INFO "\nCleaning up...\n");
@@ -242,6 +243,15 @@ static void cleanup(void)
 static int proj2_proc_show(struct seq_file *m, void *v)
 {
   int err = 0;
+  struct list_head *position = NULL;
+  struct entry *dataptr = NULL;
+  int bucket;
+  struct entry *curpos;
+  struct rb_node *iternode;  
+  void **slot;
+  struct radix_tree_iter iter;
+  struct entry *temp2 = kmalloc(sizeof(*temp2), GFP_KERNEL);
+  
   if (!int_str) {
     printk(KERN_INFO "Missing \'int_str\' parameter, exiting \n");
     return -1;
@@ -249,8 +259,45 @@ static int proj2_proc_show(struct seq_file *m, void *v)
   err = parse_params();
   if (err)
     goto out;
-  run_tests();
-  
+  //  run_tests();
+  seq_printf(m, "Linked List = ");
+  list_for_each(position, &mylist)
+    {
+      dataptr = list_entry(position, struct entry, list);
+      //printk(KERN_CONT "%d ", dataptr->val);
+      seq_printf(m, "%d ", dataptr->val);
+    }
+  seq_printf(m, "\n");
+
+  seq_printf(m, "Hash Table = ");
+  hash_for_each(myHTable, bucket, curpos, hash)
+    {
+      // printk(KERN_CONT "%d ", curpos->val);
+      seq_printf(m, "%d ", curpos->val);
+    }
+  seq_printf(m,"\n");
+  seq_printf(m, "R-B Tree = ");
+  for (iternode = rb_first(&root); iternode; iternode = rb_next(iternode))
+    {
+      struct entry *temp = rb_entry(iternode, struct entry, rbnode);       
+      //      printk(KERN_CONT "%d ", temp->val);
+      seq_printf(m, "%d ", temp->val);
+    }
+  seq_printf(m, "\n");
+  seq_printf(m, "Radix Tree = ");
+  radix_tree_for_each_slot(slot, &radix_tree, &iter, 0)
+   {
+     temp2 = radix_tree_lookup(&radix_tree, iter.index);
+     if(temp2 == NULL)
+       {
+         return -1;
+       }
+     else{
+       //       printk(KERN_CONT "%d ", temp->val);
+       seq_printf(m, "%d ", temp2->val);
+     }
+   }
+  seq_printf(m, "\n");
 out:
   cleanup();
   return err;
