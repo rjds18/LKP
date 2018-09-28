@@ -43,6 +43,8 @@ fault_handler_thread(void *arg)
 	 page_size variable (instantiated above) will be provided for its mapping length | (PROT_* and MAP_* ) are just flags to provide the memory protection info
 	 -1 is for its file descriptor as this will be changed later on |
 	 and 0 for the offset since we are in the initialization phase for the particular flag MAP_ANONYMOUS which is required for some implementations.       
+	 
+	 nested if command is for when things go wrong and we need to error while providing the info that "mmap" is the culprit.
 	 */
 	if (page == NULL) {
 		page = mmap(NULL, page_size, PROT_READ | PROT_WRITE,
@@ -52,7 +54,7 @@ fault_handler_thread(void *arg)
 	}
 
 	/* [H2: point 1]
-	 * Explain following in here.
+	   for (;;) is an equivalent way to type while(true). The reason why you would wish to use this is to avoid a type conversion problem.
 	 */
 	for (;;) {
 
@@ -62,7 +64,8 @@ fault_handler_thread(void *arg)
 		int nready;
 
 		/* [H3: point 1]
-		 * Explain following in here.
+		   1) after creating the struct of a class pollfd called pollfd, we need to initialize its constructor. In this case, we initialize its member variable of fd to the userfaultfd fd
+		   2) 
 		 */
 		pollfd.fd = uffd;
 		pollfd.events = POLLIN;
