@@ -37,7 +37,12 @@ fault_handler_thread(void *arg)
 	uffd = (long) arg;
 
 	/* [H1: point 1]
-	 * Explain following in here.
+	 In this if function, it first checks whether the "page" pointer is NULL (meaning empty). If it is indeed empty
+	 then we use mmap function which creates a new mapping in the virtual address space of the calling process.
+	 NULL will be provided for the starting address as this allows kernel to choose natural address 
+	 page_size variable (instantiated above) will be provided for its mapping length | (PROT_* and MAP_* ) are just flags to provide the memory protection info
+	 -1 is for its file descriptor as this will be changed later on |
+	 and 0 for the offset since we are in the initialization phase for the particular flag MAP_ANONYMOUS which is required for some implementations.       
 	 */
 	if (page == NULL) {
 		page = mmap(NULL, page_size, PROT_READ | PROT_WRITE,
