@@ -37,14 +37,24 @@ fault_handler_thread(void *arg)
 	uffd = (long) arg;
 
 	/* [H1: point 1]
-	 In this if function, it first checks whether the "page" pointer is NULL (meaning empty). If it is indeed empty
-	 then we use mmap function which creates a new mapping in the virtual address space of the calling process.
-	 NULL will be provided for the starting address as this allows kernel to choose natural address 
-	 page_size variable (instantiated above) will be provided for its mapping length | (PROT_* and MAP_* ) are just flags to provide the memory protection info
-	 -1 is for its file descriptor as this will be changed later on |
-	 and 0 for the offset since we are in the initialization phase for the particular flag MAP_ANONYMOUS which is required for some implementations.       
+	 In this if function, it first checks whether the "page" pointer is NULL (meaning empty). 
+	 If it is indeed empty then we use mmap function which creates a new mapping in the 
+	 virtual address space of the calling process.
 	 
-	 nested if command is for when things go wrong and we need to error while providing the info that "mmap" is the culprit.
+	 NULL will be provided for the starting address as this allows kernel to choose 
+	 natural address 
+	 
+	 page_size variable (instantiated above) will be provided for its mapping length | 
+	 (PROT_* and MAP_* ) are just flags to provide the memory protection info
+
+	 -1 is for its file descriptor as this will be changed later on |
+	 and 0 for the offset since we are in the initialization phase for the particular flag 
+	 MAP_ANONYMOUS which is required for some implementations. It is important to clarify what 
+	 ANONYMOUS means in this case. This doesn't mean that the file is mapped anonymously, but 
+	 more like the file ITSELF is anonymous (hence there isn't any files that are specified)
+	 
+	 nested if command is for when things go wrong and we need to error while providing 
+	 the info that "mmap" is the culprit. 
 	 */
 	if (page == NULL) {
 		page = mmap(NULL, page_size, PROT_READ | PROT_WRITE,
@@ -54,7 +64,8 @@ fault_handler_thread(void *arg)
 	}
 
 	/* [H2: point 1]
-	   for (;;) is an equivalent way to type while(true). The reason why you would wish to use this is to avoid a type conversion problem.
+	   for (;;) is an equivalent way to type while(true). The reason why you would wish to use 
+	   this is to avoid a type conversion problem.
 	 */
 	for (;;) {
 
@@ -64,8 +75,22 @@ fault_handler_thread(void *arg)
 		int nready;
 
 		/* [H3: point 1]
-		   1) after creating the struct of a class pollfd called pollfd, we need to initialize its constructor. In this case, we initialize its member variable of fd to the userfaultfd fd
-		   2) 
+		   1) after creating the struct of a class pollfd called pollfd, we need to 
+		   initialize its constructor. In this case, we initialize its member variable of 
+		   fd to the userfaultfd fd
+		   
+		   2) POLLIN in this case is a special case which basically sets the event that 
+		   "there is data to read"
+		   
+		   3) nready I'm guessing stands for "node ready" variable. In this context, we use 
+		   poll() function with provided file descriptor struct "pollfd" to find out when 
+		   this stuct is ready to perform I/O operation. Hence, we pass in the reference to 
+		   the struct point pollfd (which contains the member variables fd / events set 
+		   previously) and pass in additional values such as the number of items (which is 
+		   1 in this context) and set timeout option to -1 as we don't want poll to block 
+		   in this case.
+		   
+		   4) if poll returns -1 (to denote that we failed), then we need to end this program
 		 */
 		pollfd.fd = uffd;
 		pollfd.events = POLLIN;
@@ -80,7 +105,11 @@ fault_handler_thread(void *arg)
                        (pollfd.revents & POLLERR) != 0);
 
 		/* [H4: point 1]
-		 * Explain following in here.
+		   given that the previous events have occurred without any problems, we are ready 
+		   to check whether pagefaultfd is ready to be used. this function is simply taking 
+		   in the file descriptor (in our case uffd) with message pointer which should only 
+		   be available if userfaultfd worked properly. If unable to read, throw an error 
+		   and exit.
 		 */
 		nread = read(uffd, &msg, sizeof(msg));
 		if (nread == 0) {
@@ -92,7 +121,8 @@ fault_handler_thread(void *arg)
 			errExit("read");
 
 		/* [H5: point 1]
-		 * Explain following in here.
+		   for the purpose of this project, we need to check whether page fault happen. 
+		   Therefore, it page fault DOES NOT happen, then we are going to throw an exit.
 		 */
 		if (msg.event != UFFD_EVENT_PAGEFAULT) {
 			fprintf(stderr, "Unexpected event on userfaultfd\n");
@@ -100,20 +130,28 @@ fault_handler_thread(void *arg)
 		}
 
 		/* [H6: point 1]
-		 * Explain following in here.
+		   %llx stands for long long hexadecimal and this is simply verifying the page fault 
+		   functionality. here we can access flags and address using the struct 
+		   instantitated in the userfaultfd.h 
 		 */
 		printf("    UFFD_EVENT_PAGEFAULT event: ");
 		printf("flags = %llx; ", msg.arg.pagefault.flags);
 		printf("address = %llx\n", msg.arg.pagefault.address);
 
 		/* [H7: point 1]
-		 * Explain following in here.
+		   after we have finished creating a user fault mapping, we will fill in a region 
+		   of memory with using memset. Modulo operator used in this case for the byte is 
+		   to change content into different numbers?
 		 */
+		// check.
+		
 		memset(page, 'A' + fault_cnt % 20, page_size);
 		fault_cnt++;
 
 		/* [H8: point 1]
-		 * Explain following in here.
+		   uffdio_copy is a struct also defined in the userfaultfd.h. this is used in order 
+		   to copy a certain memory regions into the designated userfault registered range. 
+		   after that, it wakes up the blocked thread
 		 */
 		uffdio_copy.src = (unsigned long) page;
 		uffdio_copy.dst = (unsigned long) msg.arg.pagefault.address &
@@ -123,13 +161,15 @@ fault_handler_thread(void *arg)
 		uffdio_copy.copy = 0;
 
 		/* [H9: point 1]
-		 * Explain following in here.
+		   ioctl is used in order to create a fd which will be utilized from the user space 
+		   perspective to handle page faults. Therefore for this if statement, if this is 
+		   not possible, then we will simply throw an error and exit out of the program.
 		 */
 		if (ioctl(uffd, UFFDIO_COPY, &uffdio_copy) == -1)
 			errExit("ioctl-UFFDIO_COPY");
 
 		/* [H10: point 1]
-		 * Explain following in here.
+		   verifying whether the copy function properly worked.
 		 */
 		printf("        (uffdio_copy.copy returned %lld)\n",
                        uffdio_copy.copy);
@@ -149,7 +189,9 @@ main(int argc, char *argv[])
 	int l;
 
 	/* [M1: point 1]
-	 * Explain following in here.
+	   this is checking whether the user is properly providing the input while doing ./uffd 
+	   command (this is reinforced by argc not matching ONE arguments besides ./uffd). 
+	   Therefore, if you do something like ./uffd 1 3 4 this will be thrown.
 	 */
 	if (argc != 2) {
 		fprintf(stderr, "Usage: %s num-pages\n", argv[0]);
@@ -157,20 +199,29 @@ main(int argc, char *argv[])
 	}
 
 	/* [M2: point 1]
-	 * Explain following in here.
+	   sysconf is used to get configuration information during the runtime (of a page size in 
+	   bytes)
+	   using this information, we can further use strtoul to convert our input from the command 
+	   line and multiply with page_size while converting it to the unsigned long integer. NULL 
+	   denotes the end pointer of the arguments and 0 is simply denoting the base
 	 */
 	page_size = sysconf(_SC_PAGE_SIZE);
 	len = strtoul(argv[1], NULL, 0) * page_size;
 
 	/* [M3: point 1]
-	 * Explain following in here.
+	   we will be calling system call from the userspace using syscall() function with the 
+	   identifier of __NR_userfaultfd (__NR_SYSCALL_BASE+388); this essnetially is creating 
+	   userfaultfd object. Also provide few helpful flags (O_CLOEXEC - close on execution | 
+	   file is opened in nonblocking mode when it is possible) to give an additional information.
 	 */
 	uffd = syscall(__NR_userfaultfd, O_CLOEXEC | O_NONBLOCK);
 	if (uffd == -1)
 		errExit("userfaultfd");
 
 	/* [M4: point 1]
-	 * Explain following in here.
+	   this basically "enables" the operation of the userfaultfd. supplying information for this
+	   struct gives inthe information of being able to use userfaultfd features (this is used by
+	   using the features member variable)
 	 */
 	uffdio_api.api = UFFD_API;
 	uffdio_api.features = 0;
@@ -178,7 +229,8 @@ main(int argc, char *argv[])
 		errExit("ioctl-UFFDIO_API");
 
 	/* [M5: point 1]
-	 * Explain following in here.
+	   this is creating a space that will be used by "fault handler thread" (which will be used 
+	   further down during the pthread_create). Similar arguments as previously explained above.
 	 */
 	addr = mmap(NULL, len, PROT_READ | PROT_WRITE,
 		    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -188,7 +240,9 @@ main(int argc, char *argv[])
 	printf("Address returned by mmap() = %p\n", addr);
 
 	/* [M6: point 1]
-	 * Explain following in here.
+	   this is where we register a memory address range with the userfaultfd object. important 
+	   thing to notice here is regarding the .mode which is used to track page faults on 
+	   missing pages (described on ioctl)
 	 */
 	uffdio_register.range.start = (unsigned long) addr;
 	uffdio_register.range.len = len;
@@ -197,7 +251,9 @@ main(int argc, char *argv[])
 		errExit("ioctl-UFFDIO_REGISTER");
 
 	/* [M7: point 1]
-	 * Explain following in here.
+	   we are finally calling the void function fault_handler_thread described above while 
+	   creating a thread which will process that function. If s returns something other than 0, 
+	   that means error has occurred.
 	 */
 	s = pthread_create(&thr, NULL, fault_handler_thread, (void *) uffd);
 	if (s != 0) {
@@ -207,7 +263,12 @@ main(int argc, char *argv[])
 
 	/*
 	 * [U1]: point 5
-	 * Briefly explain the behavior of the output that corresponds with below section.
+	 setting l = 0x0 ensures that we will start from the address 0. From here on we will be 
+	 jumping through 1024 bytes (since that's how far each data is located) until we reach to 
+	 the condition where the current address is larger than the length. This is further shown on
+	 the output as each loop iteration increments the address by 400 (hexadecimal) which is 
+	 equivalent to 1024 (decimal)
+	 
 	 */
 	printf("-----------------------------------------------------\n");
 	l = 0x0;
@@ -220,7 +281,12 @@ main(int argc, char *argv[])
 
 	/*
 	 * [U2]: point 5
-	 * Briefly explain the behavior of the output that corresponds with below section.
+	 although this code looks exactly same as the U1 (which it actually is), interesting thing 
+	 occurs when this is run as shown on the output. Because when U1 initially ran, the memory 
+	 is empty, we call to the fault handler thread. In this case, since U1 already attempted to 
+	 read through empty memory which subseqently called page fault handler to solve this problem
+	 , U2 when it repeats the code, it will be able to successfully read through the address. 
+
 	 */
 	printf("-----------------------------------------------------\n");
 	l = 0x0;
@@ -233,7 +299,15 @@ main(int argc, char *argv[])
 
 	/*
 	 * [U3]: point 5
-	 * Briefly explain the behavior of the output that corresponds with below section.
+	 remember how i mentioned that on the U2, because U1 already dealt with empty memory? For 
+	 this code, we can see that there is an additional function used stated "madvise" which is a
+	 system call used to provide kernel with an information about the address range.  On this 
+	 particular code, we are using it with the flag MADV_DONTNEED which to summarize free 
+	 resources attached with it.
+
+	 However, key thing we need to observe here is that the char c = addr[l]; now changes to B 
+	 from A, which is the direct result of freeing up the space using madvise (and expecting we 
+	 won't be using this memory address again).
 	 */
 	printf("-----------------------------------------------------\n");
 	if (madvise(addr, len, MADV_DONTNEED)) {
@@ -249,7 +323,8 @@ main(int argc, char *argv[])
 
 	/*
 	 * [U4]: point 5
-	 * Briefly explain the behavior of the output that corresponds with below section.
+	 this is pretty much repeat of the U2 but confirming again that fault handler thread won't 
+	 be called in this case due to the same reason as previously explained.
 	 */
 	printf("-----------------------------------------------------\n");
 	l = 0x0;
@@ -262,7 +337,12 @@ main(int argc, char *argv[])
 
 	/*
 	 * [U5]: point 5
-	 * Briefly explain the behavior of the output that corresponds with below section.
+	 clearing the space is the same as previously done using madvise with MADV_DONTNEED flag. 
+	 The biggest difference here is memset function which we are now specifically setting it to 
+	 the character '@'. Hence when we are writing the address we will again call 
+	 fault_handler_thread as memory was cleared and when we are reading through the addr+l (as 
+	 stated on the printf command), it will return '@' character since that's what we just set 
+	 the memory to.
 	 */
 	printf("-----------------------------------------------------\n");
 	if (madvise(addr, len, MADV_DONTNEED)) {
@@ -278,7 +358,9 @@ main(int argc, char *argv[])
 
 	/*
 	 * [U6]: point 5
-	 * Briefly explain the behavior of the output that corresponds with below section.
+	 for this one it's same as previously how we are just reading the address that we wrote on 
+	 the U5. fault handler thread won't get called since that memory already exists and after
+	 reading it through we can see the resulting read address along with the character we set "@"
 	 */
 	printf("-----------------------------------------------------\n");
 	l = 0x0;
@@ -291,7 +373,8 @@ main(int argc, char *argv[])
 
 	/*
 	 * [U7]: point 5
-	 * Briefly explain the behavior of the output that corresponds with below section.
+	 this one is interesting since we are OVERWRITING what we wrote on the step U5. That's why 
+	 we don't call the fault handler thread and basically changing the addr + l to "^" character.
 	 */
 	printf("-----------------------------------------------------\n");
 	l = 0x0;
@@ -304,7 +387,8 @@ main(int argc, char *argv[])
 
 	/*
 	 * [U8]: point 5
-	 * Briefly explain the behavior of the output that corresponds with below section.
+	 This is same as the other reads we have done thus far, basically verifying what we have 
+	 wrote and reading the symbol along with it.
 	 */
 	printf("-----------------------------------------------------\n");
 	l = 0x0;
