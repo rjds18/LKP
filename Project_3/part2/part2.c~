@@ -1,0 +1,9 @@
+#include <stdio.h>
+
+int main(int argc, char *argv[])
+{
+  int i = 0;
+  i = argv[1];
+  printf("Hello World %s\n", i);
+  
+}
