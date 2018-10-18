@@ -194,7 +194,6 @@ void* mem_read(unsigned long num)
 
 void* mem_write(unsigned long num, char *msg)
 {
-  size_t str_len = strlen(msg);
   int l = 0x0;
 
   if (num == -1)
