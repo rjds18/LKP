@@ -1,0 +1,378 @@
+#define _GNU_SOURCE
+#include <stdio.h>
+#include <linux/userfaultfd.h>
+#include <pthread.h>
+#include <errno.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <fcntl.h>
+#include <signal.h>
+#include <poll.h>
+#include <string.h>
+#include <sys/mman.h>
+#include <sys/syscall.h>
+#include <sys/ioctl.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <poll.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <pthread.h>
+
+
+
+#define MAX_SIZE 4096
+
+#define errExit(msg)    do { perror(msg); exit(EXIT_FAILURE);   \
+        } while (0)
+
+void *server_socket();
+void *client_socket();
+void *machine_order();
+void *create_mmap();
+void *initialize_fd();
+void *fault_handler_thread();
+
+typedef struct info
+{
+  char *addr;
+  size_t memory_size;
+  int num;
+} stuff;
+
+int order;
+char *buffer;
+  stuff recv_data;
+
+
+stuff mch;
+size_t page_size;
+
+struct uffdio_api uffdio_api;
+struct uffdio_register uffdio_register;
+
+
+int main(int argc, char *argv[])
+{
+  pthread_t serv_thread;
+  pthread_t cli_thread;
+  //  pthread_t fd_thread;
+  
+  char *serv_num;
+  char *cli_num;
+
+  
+  int serv_chk, cli_chk;
+  
+  serv_num = argv[1];
+  cli_num = argv[2];  
+
+  serv_chk = pthread_create( &serv_thread, NULL, server_socket, (void *)serv_num);
+   if (serv_chk != 0) {
+    errno = serv_chk;
+    errExit("pthread_create");
+  }
+
+  cli_chk = pthread_create( &cli_thread, NULL, client_socket, (void *)cli_num);
+  if (cli_chk != 0) {
+    errno = cli_chk;
+    errExit("pthread_create");
+  }
+  /*
+  
+  if (order == 1)
+    {
+      mch = data;
+      mch.num = order;
+    }
+  
+  if (order == 2)
+    {
+      mch = recv_data;
+      mch.num = order;
+      create_mmap();
+      printf("Here\n");
+      initialize_fd(mch);
+    }
+  */
+
+  pthread_join( serv_thread, NULL);  
+  pthread_join( cli_thread, NULL);
+  /*
+  fd_chk = pthread_create(&fd_thread, NULL, fault_handler_thread, (void *) uffd);
+  if (fd_chk != 0) {
+    errno = fd_chk;
+    errExit("pthread_create");
+  }
+
+  pthread_join( fd_thread, NULL);
+  */
+  printf("\n\nServer Port %s | Client Port %s | Machine # %d \n\n", serv_num, cli_num, order);
+
+    
+  return 0;
+}
+
+void* initialize_fd(stuff mch_type)
+{
+
+  long uffd;          /* userfaultfd file descriptor */
+  size_t len;  /* Length of region handled by userfaultfd */
+  printf("\nInvoking userfaultfd initialization\n");
+  printf("Sanity check - Mch addr %p | memory size: %ld\n\n", mch_type.addr, mch_type.memory_size);
+  
+  page_size = sysconf(_SC_PAGE_SIZE);
+  len = mch_type.memory_size * page_size;
+  uffd = syscall(__NR_userfaultfd, O_CLOEXEC | O_NONBLOCK);  
+  if (uffd == -1)
+    errExit("userfaultfd");
+  
+  uffdio_api.api = UFFD_API;
+  uffdio_api.features = 0;
+  if (ioctl(uffd, UFFDIO_API, &uffdio_api) == -1)
+    errExit("ioctl-UFFDIO_API");
+  
+  uffdio_register.range.start = (unsigned long) mch_type.addr;
+  uffdio_register.range.len = len;
+  uffdio_register.mode = UFFDIO_REGISTER_MODE_MISSING;
+  printf("UFFD %ld UFFDIO_RANGE_LEN %lld UFFD_RANGE_START %lld\n", uffd, uffdio_register.range.len, uffdio_register.range.start);
+  int i;
+  if ((i = ioctl(uffd, UFFDIO_REGISTER, &uffdio_register)) == -1)
+    {
+      errExit("ioctl-UFFDIO_REGISTER");
+    }
+  printf("Finished Initialization\n");
+  return 0;
+}
+
+void* fault_handler_thread(void *arg)
+{
+        static struct uffd_msg msg;   /* Data read from userfaultfd */
+        static int fault_cnt = 0;     /* Number of faults so far handled */
+        long uffd;                    /* userfaultfd file descriptor */
+        char *page = mch.addr;
+        struct uffdio_copy uffdio_copy;
+        ssize_t nread;
+
+	uffd = (long) arg;
+	/*
+	printf("Checking %p\n", page);
+	if (page == NULL) {
+                page = mmap(NULL, page_size, PROT_READ | PROT_WRITE,
+                            MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+                if (page == MAP_FAILED)
+                        errExit("mmap");
+        }
+	*/
+	// this will need to be changed. right now of course page == NULL will occur,
+	// so i'll need to check whether the pre-existing created mmap is NULL or not.
+
+
+	for (;;) {
+	  struct pollfd pollfd;
+	  int nready;
+
+	  pollfd.fd = uffd;
+	  pollfd.events = POLLIN;
+	  nready = poll(&pollfd, 1, -1);
+	  if (nready == -1)
+	    errExit("poll");
+	  
+	  printf("\nfault_handler_thread():\n");
+	  printf("    poll() returns: nready = %d; "
+		 "POLLIN = %d; POLLERR = %d\n", nready,
+		 (pollfd.revents & POLLIN) != 0,
+		 (pollfd.revents & POLLERR) != 0);
+	  
+	  nread = read(uffd, &msg, sizeof(msg));
+	  if (nread == 0) {
+	    printf("EOF on userfaultfd!\n");
+	    exit(EXIT_FAILURE);
+	  }
+	  
+	  if (nread == -1)
+	    errExit("read");
+		
+	  if (msg.event != UFFD_EVENT_PAGEFAULT) {
+	    fprintf(stderr, "Unexpected event on userfaultfd\n");
+	    exit(EXIT_FAILURE);
+	  }
+
+	  printf("    UFFD_EVENT_PAGEFAULT event: ");
+	  printf("flags = %llx; ", msg.arg.pagefault.flags);
+	  printf("address = %llx\n", msg.arg.pagefault.address);
+	  
+	  //memset(page, 'A' + fault_cnt % 20, page_size);
+	  fault_cnt++;
+
+	  uffdio_copy.src = (unsigned long) page;
+	  //	  uffdio_copy.dst = (unsigned long) msg.arg.pagefault.address &
+	  //  ~(page_size - 1);
+	  //uffdio_copy.len = page_size;
+	  uffdio_copy.mode = 0;
+	  uffdio_copy.copy = 0;
+
+	  if (ioctl(uffd, UFFDIO_COPY, &uffdio_copy) == -1)
+	    errExit("ioctl-UFFDIO_COPY");
+	  
+	  printf("        (uffdio_copy.copy returned %lld)\n",
+		 uffdio_copy.copy);
+	    
+	}
+
+}
+
+void *create_mmap()
+{
+  char *addr;
+  printf("Invoking create mmap with %p\n", recv_data.addr);
+  addr = mmap((void *)recv_data.addr, recv_data.memory_size, PROT_READ | PROT_WRITE,
+		      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (addr == MAP_FAILED)
+    {
+      errExit("mmap");
+    }
+  printf("Address returned by mmap() = %p\n", recv_data.addr);
+  return 0;
+}
+
+void *server_socket(void *portnum)
+{
+  struct sockaddr_in serv_addr, cli_addr;
+  stuff data;  
+  int opt = 1;
+  int server_fd, new_socket, client_size;
+  int port = atoi(portnum);
+  printf("Server Socket with port = %d\n", port );  
+  if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
+    perror("socket failed");
+    exit(EXIT_FAILURE);
+  }
+  
+  if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT,
+		 &opt, sizeof(opt))) {
+    perror("setsockopt");
+    exit(EXIT_FAILURE);
+  }
+  memset(&serv_addr, 0, sizeof(serv_addr));
+  serv_addr.sin_family = AF_INET;
+  serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+  serv_addr.sin_port = htons( port );
+
+  if (bind(server_fd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+    perror("bind failed");
+    
+  }
+  if (listen(server_fd, 3) < 0) {
+    perror("listen");
+
+  }
+  client_size = sizeof(struct sockaddr_in);
+  if( (new_socket = accept(server_fd, (struct sockaddr *)&cli_addr, (socklen_t*)&client_size)) )
+    {
+      printf("Order number is %d\n", order);
+      if (order == 1)
+	{
+	  sleep(1);
+	  printf("Enter the memory size: ");
+	  scanf("%ld", &(data.memory_size));
+	  //sleep(5);
+	  	    
+	  
+	  //initialize_fd(data);
+
+	  long uffd;          /* userfaultfd file descriptor */
+	  size_t len;  /* Length of region handled by userfaultfd */
+	  printf("\nInvoking userfaultfd initialization\n");
+	  printf("Sanity check - Mch addr %p | memory size: %ld\n\n", data.addr, data.memory_size);
+	  
+	  page_size = sysconf(_SC_PAGE_SIZE);
+	  len = data.memory_size * page_size;
+	  uffd = syscall(__NR_userfaultfd, O_CLOEXEC | O_NONBLOCK);  
+	  if (uffd == -1)
+	    errExit("userfaultfd");
+	  data.addr = mmap(NULL, data.memory_size, PROT_READ | PROT_WRITE,
+			   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	  if (data.addr == MAP_FAILED)
+	    {
+	      printf("Failed\n");
+	      errExit("mmap");
+	    }
+	  printf("Address returned by mmap() = %p\n", data.addr);
+	  
+	  uffdio_api.api = UFFD_API;
+	  uffdio_api.features = 0;
+	  if (ioctl(uffd, UFFDIO_API, &uffdio_api) == -1)
+	    errExit("ioctl-UFFDIO_API");
+	  
+	  uffdio_register.range.start = (unsigned long) data.addr;
+	  uffdio_register.range.len = len;
+	  //uffdio_register.range.start = ;
+	  //uffdio_register.range.len = ;
+	  
+	  uffdio_register.mode = UFFDIO_REGISTER_MODE_MISSING;
+	  printf("UFFD %ld UFFDIO_RANGE_LEN %lld UFFD_RANGE_START %lld\n", uffd, uffdio_register.range.len, uffdio_register.range.start);
+
+	  if (ioctl(uffd, UFFDIO_REGISTER, &uffdio_register) == -1)
+	    {
+	      errExit("ioctl-UFFDIO_REGISTER");
+	    }
+	  printf("Finished Initialization\n");
+	  printf("Sending to the machine #2 %p %ld\n", data.addr, data.memory_size);
+	  write(new_socket, &data, sizeof(data));
+	}
+    }
+  return 0;
+}
+
+void *client_socket(void *portnum)
+{
+  struct sockaddr_in serv_addr;
+  int port;
+  port = atoi(portnum);
+  int client_fd;
+
+  if ((client_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
+    perror("socket failed");
+    exit(EXIT_FAILURE);
+  }
+  printf("\nClient Socket with port = %d\n", port);
+  serv_addr.sin_family = AF_INET;
+  if(inet_aton("127.0.0.1", &serv_addr.sin_addr) <= 0)
+    {
+      printf("\nInvalid Address | Address not supported \n");
+      exit(1);
+    }
+  serv_addr.sin_port = htons(port);
+  if ((connect(client_fd, (struct sockaddr *)&serv_addr, sizeof(serv_addr))) < 0)
+    {
+      order = 1;
+      while ((connect(client_fd, (struct sockaddr *)&serv_addr, sizeof(serv_addr))) < 0)
+	{
+	  printf("\nConnection Failed \n");
+	  sleep(1);
+	} 
+    }
+  else
+    {
+      order = 2;
+    }
+
+  
+  printf("Connection Established with %d\n", port);
+
+    
+  if (order == 2)
+    {
+      read(client_fd, &recv_data, sizeof(recv_data));
+      printf("Reading from the machine #1 %ld %p\n", recv_data.memory_size, recv_data.addr);
+      create_mmap();
+      //      sleep(5);
+      initialize_fd(recv_data);
+    }
+ 
+  return 0;
+}
+
