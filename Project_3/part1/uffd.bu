@@ -96,11 +96,9 @@ fault_handler_thread(void *arg)
 		pollfd.fd = uffd;
 		pollfd.events = POLLIN;
 		nready = poll(&pollfd, 1, -1);
-
+		printf("here2\n");
 		if (nready == -1)
 			errExit("poll");
-
-
 		/*
 		printf("\nfault_handler_thread():\n");
 		printf("    poll() returns: nready = %d; "
@@ -108,7 +106,7 @@ fault_handler_thread(void *arg)
                        (pollfd.revents & POLLIN),
                        (pollfd.revents & POLLERR));
 		*/
-		printf("here2\n");
+
 		printf("\nfault_handler_thread():\n");
 		printf("    poll() returns: nready = %d; "
                        "POLLIN = %d; POLLERR = %d\n", nready,
@@ -123,7 +121,6 @@ fault_handler_thread(void *arg)
 		   and exit.
 		 */
 		nread = read(uffd, &msg, sizeof(msg));
-		printf("here3\n");
 		if (nread == 0) {
 			printf("EOF on userfaultfd!\n");
 			exit(EXIT_FAILURE);
@@ -249,6 +246,7 @@ main(int argc, char *argv[])
 	if (addr == MAP_FAILED)
 		errExit("mmap");
 
+	printf("Address returned by mmap() = %p\n", addr);
 
 	/* [M6: point 1]
 	   this is where we register a memory address range with the userfaultfd object. important 
@@ -258,6 +256,7 @@ main(int argc, char *argv[])
 	uffdio_register.range.start = (unsigned long) addr;
 	uffdio_register.range.len = len;
 	uffdio_register.mode = UFFDIO_REGISTER_MODE_MISSING;
+	printf("UFFD %ld UFFDIO_RANGE_LEN %lld UFFD_RANGE_START %lld\n", uffd, uffdio_register.range.len, uffdio_register.range.start);
 
 	if (ioctl(uffd, UFFDIO_REGISTER, &uffdio_register) == -1)
 		errExit("ioctl-UFFDIO_REGISTER");
@@ -282,7 +281,6 @@ main(int argc, char *argv[])
 	 equivalent to 1024 (decimal)
 	 
 	 */
-	
 	printf("-----------------------------------------------------\n");
 	l = 0x0;
 	while (l < len) {
@@ -291,7 +289,7 @@ main(int argc, char *argv[])
 		printf("%c\n", c);
 		l += 2048;
 	}
-	
+
 	/*
 	 * [U2]: point 5
 	 although this code looks exactly same as the U1 (which it actually is), interesting thing 
@@ -301,7 +299,6 @@ main(int argc, char *argv[])
 	 , U2 when it repeats the code, it will be able to successfully read through the address. 
 
 	 */
-	
 	printf("-----------------------------------------------------\n");
 	l = 0x0;
 	while (l < len) {
@@ -322,15 +319,11 @@ main(int argc, char *argv[])
 	 However, key thing we need to observe here is that the char c = addr[l]; now changes to B 
 	 from A, which is the direct result of freeing up the space using madvise (and expecting we 
 	 won't be using this memory address again).
-	*/
-	/*
+	 */
 	printf("-----------------------------------------------------\n");
 	if (madvise(addr, len, MADV_DONTNEED)) {
 		errExit("fail to madvise");
 	}
-
-	*/
-	
 	l = 0x0;
 	while (l < len) {
 		char c = addr[l];
@@ -338,13 +331,12 @@ main(int argc, char *argv[])
 		printf("%c\n", c);
 		l += 1024;
 	}
-	//*/
+
 	/*
 	 * [U4]: point 5
 	 this is pretty much repeat of the U2 but confirming again that fault handler thread won't 
 	 be called in this case due to the same reason as previously explained.
 	 */
-	/*
 	printf("-----------------------------------------------------\n");
 	l = 0x0;
 	while (l < len) {
@@ -353,6 +345,70 @@ main(int argc, char *argv[])
 		printf("%c\n", c);
 		l += 1024;
 	}
-	*/
+
+	/*
+	 * [U5]: point 5
+	 clearing the space is the same as previously done using madvise with MADV_DONTNEED flag. 
+	 The biggest difference here is memset function which we are now specifically setting it to 
+	 the character '@'. Hence when we are writing the address we will again call 
+	 fault_handler_thread as memory was cleared and when we are reading through the addr+l (as 
+	 stated on the printf command), it will return '@' character since that's what we just set 
+	 the memory to.
+	 */
+	printf("-----------------------------------------------------\n");
+	if (madvise(addr, len, MADV_DONTNEED)) {
+		errExit("fail to madvise");
+	}
+	l = 0x0;
+	while (l < len) {
+		memset(addr+l, '@', 1024);
+		printf("#5. write address %p in main(): ", addr + l);
+		printf("%c\n", addr[l]);
+		l += 1024;
+	}
+
+	/*
+	 * [U6]: point 5
+	 for this one it's same as previously how we are just reading the address that we wrote on 
+	 the U5. fault handler thread won't get called since that memory already exists and after
+	 reading it through we can see the resulting read address along with the character we set "@"
+	 */
+	printf("-----------------------------------------------------\n");
+	l = 0x0;
+	while (l < len) {
+		char c = addr[l];
+		printf("#6. Read address %p in main(): ", addr + l);
+		printf("%c\n", c);
+		l += 1024;
+	}
+
+	/*
+	 * [U7]: point 5
+	 this one is interesting since we are OVERWRITING what we wrote on the step U5. That's why 
+	 we don't call the fault handler thread and basically changing the addr + l to "^" character.
+	 */
+	printf("-----------------------------------------------------\n");
+	l = 0x0;
+	while (l < len) {
+		memset(addr+l, '^', 1024);
+		printf("#7. write address %p in main(): ", addr + l);
+		printf("%c\n", addr[l]);
+		l += 1024;
+	}
+
+	/*
+	 * [U8]: point 5
+	 This is same as the other reads we have done thus far, basically verifying what we have 
+	 wrote and reading the symbol along with it.
+	 */
+	printf("-----------------------------------------------------\n");
+	l = 0x0;
+	while (l < len) {
+		char c = addr[l];
+		printf("#8. Read address %p in main(): ", addr + l);
+		printf("%c\n", c);
+		l += 1024;
+	}
+
 	exit(EXIT_SUCCESS);
 }

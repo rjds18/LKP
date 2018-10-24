@@ -28,8 +28,8 @@
 
 int serv_num;
 int cli_num;
-int mem_size;
-
+char *mem_size;
+      static int page_size;
 int test;
 
 void *server_socket();
@@ -37,9 +37,9 @@ void *client_socket();
 
 int main(int argc, char *argv[])
 {
-  pthread_t serv_thread;
+  //  pthread_t serv_thread;
   pthread_t cli_thread;
-  int server_t;
+  // int server_t;
   int client_t;
   printf("Testing: Server=0 | Client=1: ");
   scanf("%d", &test);
@@ -54,18 +54,68 @@ int main(int argc, char *argv[])
   printf("\n");
    
   printf("Enter the memory size: ");
-  scanf("%d", &mem_size);
-  printf("Server Port %d | Client Port %d | Mem size entered: %d \n", serv_num, cli_num, mem_size);
+  //  scanf("%s", mem_size);
+  printf("Server Port %d | Client Port %d | Mem size entered: %s \n", serv_num, cli_num, mem_size);
+  mem_size = "3";
+  
+  long uffd;  
+  unsigned long len;
+
+  struct uffdio_api uffdio_api;
+  struct uffdio_register uffdio_register;
+  printf("\nInvoking userfaultfd initialization\n");
+  //printf("Sanity check - Mch addr %p | memory size: %d\n\n", new_addr, mem_size);
+  //char *addr;
+  char *new_addr;
+  page_size = sysconf(_SC_PAGE_SIZE);
+  printf("here\n");
+  len = strtoul(mem_size, NULL, 0) * page_size;
+  printf("here2\n");
+  uffd = syscall(__NR_userfaultfd, O_CLOEXEC | O_NONBLOCK);
+  if (uffd == -1)
+    errExit("userfaultfd");
+  //      printf("\nServer Socket with mmap_size of %d and port = %d\n", mem_size, port);
+
+  uffdio_api.api = UFFD_API;
+  uffdio_api.features = 0;
+  if (ioctl(uffd, UFFDIO_API, &uffdio_api) == -1)
+    errExit("ioctl-UFFDIO_API");
+  printf("here\n");
+  new_addr = mmap(NULL, len, PROT_READ | PROT_WRITE,
+		  MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+  if (new_addr == MAP_FAILED)
+    {
+      errExit("mmap");
+    }
+      
+  uffdio_register.range.start = (unsigned long) new_addr;
+  uffdio_register.range.len = len;
+  uffdio_register.mode = UFFDIO_REGISTER_MODE_MISSING;
+  printf("UFFD %ld UFFDIO_RANGE_LEN %lld UFFD_RANGE_START %lld\n", uffd, uffdio_register.range.len, uffdio_register.range.start);
+  int i;
+  if ((i = ioctl(uffd, UFFDIO_REGISTER, &uffdio_register)) == -1)
+    {
+      errExit("ioctl-UFFDIO_REGISTER");
+    }
+  printf("Finished Initialization\n");
+
   
   if (test == 0)
     {
       printf("here");
-      
+      /*       
       server_t = pthread_create( &serv_thread, NULL, server_socket(), NULL);
       if (server_t < 0)
 	{
 	  printf("Error\n");
 	}
+      */
+      
+      // write(new_socket, &addr, sizeof(addr));
+      //      printf("Address returned by mmap() = %p\n", new_addr);
+
+      
+	   //server_socket();
     }
   else if (test == 1)
     {
@@ -79,9 +129,44 @@ int main(int argc, char *argv[])
   return 0;
 }
 
+/*
+void* initialize_fd(stuff mch_type)
+{
+
+  long uffd;  
+  size_t len; 
+  printf("\nInvoking userfaultfd initialization\n");
+  printf("Sanity check - Mch addr %p | memory size: %ld\n\n", mch_type.addr, mch_type.memory_size);
+
+  page_size = sysconf(_SC_PAGE_SIZE);
+  len = mch_type.memory_size * page_size;
+  uffd = syscall(__NR_userfaultfd, O_CLOEXEC | O_NONBLOCK);
+  if (uffd == -1)
+    errExit("userfaultfd");
+
+  uffdio_api.api = UFFD_API;
+  uffdio_api.features = 0;
+  if (ioctl(uffd, UFFDIO_API, &uffdio_api) == -1)
+    errExit("ioctl-UFFDIO_API");
+
+  uffdio_register.range.start = (unsigned long) mch_type.addr;
+  uffdio_register.range.len = len;
+  uffdio_register.mode = UFFDIO_REGISTER_MODE_MISSING;
+  printf("UFFD %ld UFFDIO_RANGE_LEN %lld UFFD_RANGE_START %lld\n", uffd, uffdio_register.range.len, uffdio_register.range.start);
+  int i;
+  if ((i = ioctl(uffd, UFFDIO_REGISTER, &uffdio_register)) == -1)
+    {
+      errExit("ioctl-UFFDIO_REGISTER");
+    }
+  printf("Finished Initialization\n");
+  return 0;
+}
+
+*/
+
 void *server_socket()
 {
-  char* addr;
+  //  char* addr;
   struct sockaddr_in serv_addr, cli_addr;
   
   int opt = 1;
@@ -119,19 +204,9 @@ void *server_socket()
   if( (new_socket = accept(server_fd, (struct sockaddr *)&cli_addr, (socklen_t*)&client_size)) )
     {
       printf("Connection accepted\n");
-      printf("\nServer Socket with mmap_size of %d and port = %d\n", mem_size, port);
-      addr = mmap(NULL, mem_size, PROT_READ | PROT_WRITE,
-		  MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-      if (addr == MAP_FAILED)
-	{
-	  errExit("mmap");
-	}
-      
-      write(new_socket, &addr, sizeof(addr));
-      printf("Address returned by mmap() = %p\n", addr);
       
     }
-  close(server_fd);
+  // close(server_fd);
   return 0;
 }
 
@@ -164,13 +239,13 @@ void *client_socket()
   int i =  read(client_fd, &buffer, sizeof(buffer));
   printf("Reading %d %p \n", i , buffer );
   //write(client_fd, &number, sizeof(number));
-  addr = mmap(buffer, mem_size, PROT_READ | PROT_WRITE,                                       
+  addr = mmap(buffer, atoi(mem_size), PROT_READ | PROT_WRITE,                                       
 	      MAP_SHARED | MAP_ANONYMOUS, -1, 0);                                            
   if (addr == MAP_FAILED)                                                                      
     {                                                                                          
       errExit("mmap");
     }      
-  printf("Address returned by mmap() = %p Page size = %d \n", addr, mem_size);
+  printf("Address returned by mmap() = %p Page size = %s \n", addr, mem_size);
 
   return 0;
 }

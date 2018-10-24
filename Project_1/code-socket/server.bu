@@ -8,12 +8,8 @@
 #define PORT 5984
 #define BUFF_SIZE 4096
 
-#pragma pack(1)
-typedef struct {
-  int i;
-  char *j = "hello";
-} stuff;
-#pragma pack(0)
+
+
 
 int main(int argc, const char *argv[])
 {
@@ -27,8 +23,7 @@ int main(int argc, const char *argv[])
 	int opt = 1;
 	int addrlen = sizeof(address);
 	char buffer[BUFF_SIZE] = {0};
-	//	char *hello = "Hello from server";
-	stuff *test = malloc(sizeof(stuff));
+	char *hello = "Hello from server";
 
 	/* [S1: point 1]
 	 * Although the file desciptor of 0 is valid, in this case if we get 0, we must
@@ -122,10 +117,7 @@ int main(int argc, const char *argv[])
 	 * we will now be sending data TO the client (which its file descriptor is described in the
 	 * new_socket variable) with the message "hello" with its respective size. 
 	 */
-	test->j = "hello";
-	test->i = 2;
-	send(new_socket , test, sizeof(stuff) , 0 );
-	//	sendto(new_socket, &pkt,sizeof(struct stuff),0
+	send(new_socket , hello , strlen(hello) , 0 );
 	printf("Hello message sent\n");
 	return 0;
 }

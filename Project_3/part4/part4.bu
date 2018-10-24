@@ -42,13 +42,12 @@ struct uffdio_register uffdio_register;
 typedef struct 
 {
   char *addr;
-  unsigned long pg_size;
   unsigned long uffd;
+  unsigned long pg_size;
+  int message;
   unsigned long length;
 
 } stuff;
-
-
 
 int order;
 char *buffer;
@@ -58,116 +57,50 @@ stuff recv_data;
 stuff mch;
 size_t page_size;
 
+int client_fd, server_fd, new_socket;
+int client_size;
+int fd_chk;
+
 
 char *commands;
+char *serv_num;
+char *cli_num;
 
+
+pthread_t fd_thread;
 
 int main(int argc, char *argv[])
 {
   pthread_t serv_thread;
   pthread_t cli_thread;
-  pthread_t fd_thread;
-  
-  char *serv_num;
-  char *cli_num;
 
   
-  int serv_chk, cli_chk, fd_chk;
+  int serv_chk, cli_chk ;
   
   serv_num = argv[1];
   cli_num = argv[2];  
-
-  printf("Hello\n");
   
   serv_chk = pthread_create( &serv_thread, NULL, server_socket, (void *)serv_num);
    if (serv_chk != 0) {
     errno = serv_chk;
     errExit("pthread_create");
   }
-  printf("Hello\n");
   
   cli_chk = pthread_create( &cli_thread, NULL, client_socket, (void *)cli_num);
   if (cli_chk != 0) {
     errno = cli_chk;
     errExit("pthread_create");
     }
-  printf("Hello\n");
 
+  
   pthread_join( cli_thread, NULL);
   pthread_join( serv_thread, NULL);
-
-  if (order == 1)
-    {
-      mch = data;
-    }
-  else if (order == 2)
-    {
-      mch = recv_data;
-    }
   
-  fd_chk = pthread_create(&fd_thread, NULL, fault_handler_thread, (void *) mch.uffd);
-  if (fd_chk != 0) {
-    errno = fd_chk;
-    errExit("pthread_create");
-  }
+  
+  
   sleep(1);
-  menu();
+
   
-  //pthread_join( fd_thread, NULL);  
-  
-  //printf("Server Port %s | Client Port %s | Machine # %d \n\n", serv_num, cli_num, order);
-  return 0;
-}
-
-
-
-void* menu()
-{
-  char *commands = malloc(sizeof(char)*page_size);
-  unsigned long access;
-  char *message = malloc(sizeof(char)*page_size);
-  do  {
-    sleep(0.5);
-    printf("\nPlease enter the command < Read = r | Write = w | Quit = q > : ");
-    scanf("%s", commands);
-
-    if(strcmp(commands,"r") == 0)
-      {
-	printf("For which page? (0-%ld, or -1 for all): ", mch.pg_size-1);
-	scanf("%ld", &access);
-	if (access < mch.pg_size || access == -1)
-	  {
-	    mem_read(access);
-	  }
-	else
-	  {
-	    printf("Can't read that page\n");
-	  }
-      }
-    else if(strcmp(commands, "w") == 0)
-      {
-	printf("For which page? (0-%ld, or -1 for all): ", mch.pg_size-1);
-	scanf("%ld", &access);
-	if (access < mch.pg_size || access == -1)
-	  {
-	    while ((getchar()) != '\n');
-	    printf("Enter your message: ");
-	    scanf("%[^\n]s", message);
-	    mem_write(access, message);
-	  }
-	else
-	  {
-	    printf("Can't write to that page\n");
-	  }
-      }
-  } while(strcmp(commands, "q") != 0);
-
-  free(commands);
-  
-  if(strcmp(commands, "q") == 0)
-    {
-      exit(1);
-    }
   return 0;
 }
 
@@ -193,29 +126,41 @@ void* mem_read(unsigned long num)
       printf("Read address %p: \n", mch.addr + l);
       printf("%s\n", c);
     }
+
   return 0;
 }
 
-void* mem_write(unsigned long num, char *msg)
+void* mem_write(unsigned long num, char *msg, stuff mch)
 {
   //  size_t str_len = strlen(msg);
   int l = 0x0;
-
+  int j = 0x0;
   if (num == -1)
     {
-      while( l < mch.length)
+
+      while (l < mch.length)
 	{
-	  memcpy(mch.addr+l, msg, strlen(msg));
+	  printf("Here\n");
+	  memset(mch.addr+l, 0, sizeof(page_size));
 	  l += page_size;
+	}
+      while( j < mch.length)
+	{
+	  printf("Here2\n");
+	  memcpy(mch.addr+j, msg, strlen(msg));
+	  j += page_size;
 	}
     }
   else
     {
       l += (num*page_size);
+      memset(mch.addr+l, 0, sizeof(page_size));
+            printf("Here3\n");
+
       memcpy(mch.addr+l, msg, strlen(msg));
+            printf("Here4\n");
+
     }
-  //printf("Write message %s in the page %ld\n", msg, num);
-  //printf("length is: %ld\n", str_len);
   
   return 0;
 }
@@ -247,12 +192,6 @@ void* fault_handler_thread(void *arg)
 	    errExit("poll");
 	  
 	  printf("\n[x] PAGEFAULT\n");
-	  /*
-	  printf("    poll() returns: nready = %d; "
-		 "POLLIN = %d; POLLERR = %d\n", nready,
-		 (pollfd.revents & POLLIN) != 0,
-		 (pollfd.revents & POLLERR) != 0);
-	  */
 	  nread = read(uffd, &msg, sizeof(msg));
 	  if (nread == 0) {
 	    printf("EOF on userfaultfd!\n");
@@ -266,11 +205,6 @@ void* fault_handler_thread(void *arg)
 	    fprintf(stderr, "Unexpected event on userfaultfd\n");
 	    exit(EXIT_FAILURE);
 	  }
-	  /*
-	  printf("    UFFD_EVENT_PAGEFAULT event: ");
-	  printf("flags = %llx; ", msg.arg.pagefault.flags);
-	  printf("address = %llx\n", msg.arg.pagefault.address);
-	  */
 	  uffdio_copy.src = (unsigned long) page;
 	  uffdio_copy.dst = (unsigned long) msg.arg.pagefault.address &
 	    ~(page_size - 1);
@@ -281,10 +215,6 @@ void* fault_handler_thread(void *arg)
 	  
 	  if (ioctl(uffd, UFFDIO_COPY, &uffdio_copy) == -1)
 	    errExit("ioctl-UFFDIO_COPY");
-	  /*	  
-	  printf("        (uffdio_copy.copy returned %lld)\n",
-		 uffdio_copy.copy);
-	  */
 	}
 
 }
@@ -293,7 +223,6 @@ void *server_socket(void *portnum)
 {
   struct sockaddr_in serv_addr, cli_addr; 
   int opt = 1;
-  int server_fd, new_socket, client_size;
   int port = atoi(portnum);
 
   
@@ -338,13 +267,14 @@ void *server_socket(void *portnum)
 	  data.length = len;
 	  
 	  data.addr = mmap(NULL, len, PROT_READ | PROT_WRITE,
-			   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+			   MAP_SHARED | MAP_ANONYMOUS, -1, 0);
 	  if (data.addr == MAP_FAILED)
 	    {
 	      printf("Failed\n");
 	      errExit("mmap");
 	    }
-
+	  printf("mmap generated address %p \n", data.addr);
+	  //memset(data.addr, 0, sizeof(page_size));
 	  write(new_socket, &data, sizeof(stuff));
 	  data.uffd = syscall(__NR_userfaultfd, O_CLOEXEC | O_NONBLOCK);  
 	  if (data.uffd == -1)
@@ -365,9 +295,111 @@ void *server_socket(void *portnum)
 	      errExit("ioctl-UFFDIO_REGISTER");
 	    }
 	  printf("Finished Initialization\n");
+	    
+	  fd_chk = pthread_create(&fd_thread, NULL, fault_handler_thread, (void *) data.uffd);
+	  if (fd_chk != 0) {
+	    errno = fd_chk;
+	    errExit("pthread_create");
+	  }
+  
+	  /*------------menu-----------*/
 
+	  char *commands = malloc(sizeof(char)*page_size);
+	  unsigned long access;
+	  char *message = malloc(sizeof(char)*page_size);
+	  do  {
+	    sleep(0.5);
+	    printf("\nPlease enter the command < Read = r | Write = w | Quit = q > : ");
+	    scanf("%s", commands);
+	    if(strcmp(commands,"r") == 0)
+	      {
+		printf("For which page? (0-%ld, or -1 for all): ", data.pg_size-1);
+		scanf("%ld", &access);
+		if (access < data.pg_size || access == -1)
+		  {
+		    //mem_read(access);
+		    int l = 0x0;
+		    char* c;
+		    printf("Reading page %ld\n", access);
+		    if (access == -1)
+		      {
+			printf("Reading all pages\n");
+			while (l < data.length) {
+			  c = &data.addr[l];
+			  //printf("Read address %p: \n", data.addr + l);
+			  printf("Reading the string: %s\n", c);
+			  l += page_size;
+			}
+		      }
+		    else
+		      {
+			l += (access*page_size);
+			c = &data.addr[l];
+			//printf("Read address %p: \n", data.addr + l);
+			printf("Reading the string: %s\n", c);
+		      }
+
+		  }
+		else
+		  {
+		    printf("Can't read that page\n");
+		  }
+	      }
+	    else if(strcmp(commands, "w") == 0)
+	      {
+		printf("For which page? (0-%ld, or -1 for all): ", data.pg_size-1);
+		scanf("%ld", &access);
+		if (access < data.pg_size || access == -1)
+		  {
+		    while ((getchar()) != '\n');
+		    printf("Enter your message: ");
+		    scanf("%[^\n]s", message);
+		    data.message = 1;
+		    //mem_write(access, message, data);
+		    int l = 0x0;
+		    int j = 0x0;
+		    if (access == -1)
+		      {
+			while (l < data.length)
+			  {
+			    memset(data.addr+l, 0, sizeof(page_size));
+			    l += page_size;
+			  }
+			while( j < data.length)
+			  {
+			    memcpy(data.addr+j, message, strlen(message));
+			    j += page_size;
+			  }
+		      }
+		    else
+		      {
+			printf("Here with %ld\n", access);
+			printf("Read address %p: \n", data.addr + l);
+			l += (access*page_size);
+			memset(data.addr+l, 0, sizeof(page_size));
+			memcpy(data.addr+l, message, strlen(message));
+			if (order == 1)
+			  {
+			    write(new_socket, message, sizeof(char)*page_size);
+			    
+			  }
+		      }
+		  }
+		else
+		  {
+		    printf("Can't write to that page\n");
+		  }
+	      }
+	  } while(strcmp(commands, "q") != 0);
+
+	  free(commands);
+	  free(message);
+	  if(strcmp(commands, "q") == 0)
+	    {
+	      exit(1);
+	    }
+	  /*-----------menu ends--------*/
 	}
-
     }
 
   return 0;
@@ -378,7 +410,6 @@ void *client_socket(void *portnum)
   struct sockaddr_in serv_addr;
   int port;
   port = atoi(portnum);
-  int client_fd;
   char *recv_addr;
   
   if ((client_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
@@ -411,7 +442,6 @@ void *client_socket(void *portnum)
   
   if (order == 2)
     {
-
       recv(client_fd, &recv_data, sizeof(recv_data), MSG_WAITALL);
       unsigned long len;  /* Length of region handled by userfaultfd */
       printf("\nInvoking userfaultfd initialization\n");
@@ -429,7 +459,7 @@ void *client_socket(void *portnum)
 	errExit("userfaultfd");
       
       recv_addr = mmap(recv_data.addr, len, PROT_READ | PROT_WRITE,
-		       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		       MAP_SHARED | MAP_ANONYMOUS, -1, 0);
       if (recv_addr == MAP_FAILED)
 	{
 	  printf("Failed\n");
@@ -452,8 +482,71 @@ void *client_socket(void *portnum)
 	  errExit("ioctl-UFFDIO_REGISTER");
 	}
       printf("Finished Initialization\n");
+
+      fd_chk = pthread_create(&fd_thread, NULL, fault_handler_thread, (void *) recv_data.uffd);
+      if (fd_chk != 0) {
+	errno = fd_chk;
+	errExit("pthread_create");
+      }
+
+      
       //      menu();
+      /*------------menu-----------*/
+      char *commands = malloc(sizeof(char)*page_size);
+      unsigned long access;
+      char *recv_message = malloc(sizeof(char)*page_size);
+      char *message = malloc(sizeof(char)*page_size);
+      do  {
+	sleep(0.5);
+	printf("\nPlease enter the command < Read = r | Write = w | Quit = q > : ");
+	scanf("%s", commands);    
+	if(strcmp(commands,"r") == 0)
+	  {
+	    printf("For which page? (0-%ld, or -1 for all): ", recv_data.pg_size-1);
+	    scanf("%ld", &access);
+	    printf("Here\n");
+	    if (order == 2)
+	      {
+		read(client_fd, recv_message, sizeof(char) * page_size);
+		printf("Received data %s\n", recv_message);
+	      }
+	    if (access < recv_data.pg_size || access == -1)
+	      {
+		//mem_read(access);
+	      }
+	    else
+	      {
+		printf("Can't read that page\n");
+	      }
+	  }
+	else if(strcmp(commands, "w") == 0)
+	  {
+	    printf("For which page? (0-%ld, or -1 for all): ", recv_data.pg_size-1);
+	    scanf("%ld", &access);
+	    if (access < recv_data.pg_size || access == -1)
+	      {
+		while ((getchar()) != '\n');
+		printf("Enter your message: ");
+		scanf("%[^\n]s", message);
+		//mem_write(access, message, recv_data);
+	      }
+	    else
+	      {
+		printf("Can't write to that page\n");
+	      }
+	  }
+      } while(strcmp(commands, "q") != 0);
+
+      free(commands);
+      free(message);
+      if(strcmp(commands, "q") == 0)
+	{
+	  exit(1);
+	}
+      /*-----------menu ends--------*/
+
     }
+  
  
   return 0;
 }
