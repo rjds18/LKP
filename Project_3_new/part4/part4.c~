@@ -1,0 +1,152 @@
+#define _GNU_SOURCE
+#include <stdio.h>
+#include <linux/userfaultfd.h>
+#include <pthread.h>
+#include <errno.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <fcntl.h>
+#include <signal.h>
+#include <poll.h>
+#include <string.h>
+#include <sys/mman.h>
+#include <sys/syscall.h>
+#include <sys/ioctl.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <poll.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <pthread.h>
+
+#define MAX_SIZE 4096
+
+#define errExit(msg)    do { perror(msg); exit(EXIT_FAILURE);   \
+        } while (0)
+
+//variables
+char* serv_num; //server port from the cmd line
+char* cli_num;  //client port from the cmd line
+
+int mch_num;    //machine number (1 | 2);
+
+
+void *server_socket();
+void *client_socket();
+
+
+int main(int argc, char *argv[])
+{
+  pthread_t serv_thread;
+  pthread_t cli_thread;
+
+  int serv_chk;
+  int cli_chk;
+  
+  serv_num = argv[1];
+  cli_num = argv[2];
+
+  
+  serv_chk = pthread_create( &serv_thread, NULL, server_socket, (void *)serv_num);
+  if (serv_chk != 0) {
+    errno = serv_chk;
+    errExit("pthread_create");
+  }
+
+  cli_chk = pthread_create( &cli_thread, NULL, client_socket, (void *)cli_num);
+  if (cli_chk != 0) {
+    errno = cli_chk;
+    errExit("pthread_create");
+  }
+  pthread_join( cli_thread, NULL);
+  pthread_join( serv_thread, NULL);
+   
+}
+
+void *server_socket(void *portnum)
+{
+  struct sockaddr_in address; //specifying address to connect a socket
+  int server_fd, new_socket;  //server file descriptor / new-socket
+  int port = atoi(portnum);
+  //int port = atoi(serv_num);
+  
+  int opt = 1;
+  int addrlen = sizeof(address);
+  
+  printf("Server Socket with port = %d\n", port);  
+  if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
+    perror("socket failed");
+    exit(EXIT_FAILURE);
+  } // create socket for server_fd
+  if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT,
+		 &opt, sizeof(opt))) {
+    perror("setsockopt");
+    exit(EXIT_FAILURE);
+  } // set socket option for server_fd
+  
+  address.sin_family = AF_INET;
+  address.sin_addr.s_addr = htonl(INADDR_ANY);
+  address.sin_port = htons( port );
+  
+  if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+    perror("bind failed");
+    exit(1);
+  } // binding socket described in server_fd to the addr
+  
+  if (listen(server_fd, 3) < 0) {
+    perror("listen");
+    exit(1);
+  } // marks the socket server_fd as a passive socket which will listen for client
+  
+  printf("Trying to connect ... \n");
+  
+  if( (new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) )
+    {
+      printf("Connection accepted\n");     
+    }
+  // close(server_fd);
+
+  for (;;)
+    {
+      printf("Server %d is keep listening to %d \n", mch_num, port);
+      sleep(10);
+    }
+  
+  return 0;
+}
+
+void *client_socket(void *portnum)
+{
+  struct sockaddr_in serv_addr;
+  int port = atoi(portnum);
+  //int port = atoi(cli_num);
+  int client_fd;
+  char* addr;
+  if ((client_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
+    perror("socket failed");
+    exit(EXIT_FAILURE);
+  }
+  printf("\nClient Socket with port = %d\n", port);
+  serv_addr.sin_family = AF_INET;
+  if(inet_aton("127.0.0.1", &serv_addr.sin_addr) <= 0)
+    {
+      printf("\nInvalid Address | Address not supported \n");
+      exit(1);
+    }
+  serv_addr.sin_port = htons(port);
+  if ((connect(client_fd, (struct sockaddr *)&serv_addr, sizeof(serv_addr))) < 0)
+    {
+      //checks first for the connection, if it reaches this state, that means mch = 1;
+      //otherwise, it will be mch_num = 2
+      mch_num = 1;
+      while ((connect(client_fd, (struct sockaddr *)&serv_addr, sizeof(serv_addr))) < 0) {
+          printf("\nConnection Failed \n");
+          sleep(1); } }
+  else
+    {      mch_num = 2; }
+
+  return 0;
+}
+
