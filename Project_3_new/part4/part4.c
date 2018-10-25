@@ -31,20 +31,20 @@ char* serv_num; //server port from the cmd line
 char* cli_num;  //client port from the cmd line
 int mch_num;    //machine number (1 | 2);
 char* addr;     //mmap address setting globally to easily share
-pthread_t pf_thread; //pagefault thread for both mch 1 and mch 2
 char commands;  //this will be used for menu() - only used in the client
-long init_uffd; //uffd which will be used for the pagefault thread
 
+int pf_chk;
+pthread_t pf_thread; //pagefault thread for both mch 1 and mch 2
+long init_uffd; //uffd which will be used for the pagefault thread
 
 static int page_size; //page size which will be used for pagefault
 struct uffdio_api uffdio_api;
 struct uffdio_register uffdio_register;
 
-
 typedef struct {
   char *addr;
   long page_num;
-  ssize_t page_size;
+  ssize_t page_count;
 } proc_info;
 
 void *server_socket();
@@ -74,22 +74,80 @@ int main(int argc, char *argv[])
   }
   pthread_join( cli_thread, NULL); pthread_join( serv_thread, NULL); 
 }
+void* fault_handler_thread(void *arg)
+{
+        static struct uffd_msg msg;   /* Data read from userfaultfd */
+        long uffd;                    /* userfaultfd file descriptor */
+        char *page = NULL;
+        struct uffdio_copy uffdio_copy;
+        ssize_t nread;
+        uffd = (long) arg;
+        if (page == NULL) {
+                page = mmap(NULL, page_size, PROT_READ | PROT_WRITE,
+                            MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+                if (page == MAP_FAILED)
+                        errExit("mmap");
+        }
+	 for (;;) {
+          struct pollfd pollfd;
+          int nready;
+          pollfd.fd = uffd;
+          pollfd.events = POLLIN;
+          nready = poll(&pollfd, 1, -1);
+          if (nready == -1)
+            errExit("poll");
+          printf("\n[x] PAGEFAULT\n");
+	  nread = read(uffd, &msg, sizeof(msg));
+          if (nread == 0) {
+            printf("EOF on userfaultfd!\n");
+            exit(EXIT_FAILURE);           }
+          if (nread == -1)
+            errExit("read");
+          if (msg.event != UFFD_EVENT_PAGEFAULT) {
+            fprintf(stderr, "Unexpected event on userfaultfd\n");
+            exit(EXIT_FAILURE);          }
+          uffdio_copy.src = (unsigned long) page;
+          uffdio_copy.dst = (unsigned long) msg.arg.pagefault.address &
+            ~(temp_data.page_count - 1);
+          uffdio_copy.len = page_size;
+          uffdio_copy.mode = 0;
+          uffdio_copy.copy = 0;
+          if (ioctl(uffd, UFFDIO_COPY, &uffdio_copy) == -1)
+            errExit("ioctl-UFFDIO_COPY");
+
+	}
+}
+
+
 
 void *menu()
 {
+  long access_page; //calculate the address of which page will be read
+  char* reading = malloc(sizeof(char));           //char being read
+  long base_addr = 0x0;
+  char* message = malloc(sizeof(char));
   do {
     if (mch_num == 1) { while((getchar()) != '\n'); }
     printf("Please enter the command < Read = r | Write = w | View = v | Quit = q > : ");
     scanf("%c", &commands);
     if (commands == 'r')
       {
-	printf("For which page? (0-%ld, or -1 for all): ", temp_data.page_size-1);
+	printf("For which page? (0-%ld, or -1 for all): ", temp_data.page_count-1);
 	scanf("%ld", &temp_data.page_num);
-	printf("Read - checking addr %p %ld\n", addr, temp_data.page_num);
+	access_page = base_addr + (temp_data.page_num * page_size);
+	char c = addr[access_page];
+	printf("Reading the page %c\n", c);
       }
     else if (commands == 'w')
       {
-	printf("Write\n");
+	printf("For which page? (0-%ld, or -1 for all): ", temp_data.page_count-1);
+	scanf("%ld", &temp_data.page_num);
+	access_page = base_addr + (temp_data.page_num * page_size);
+	while((getchar()) != '\n');
+	printf("Enter your message: ");
+	scanf("%[^\n]s", message);
+	memcpy(addr+access_page, message, strlen(message));
+	printf("Writing %s\n", &addr[access_page]);
       }
     else if (commands == 'v')
       {
@@ -149,10 +207,11 @@ void *server_socket(void *portnum)
       read(new_socket, &temp_data, sizeof(proc_info));
       /* after receiving the data, this is where magic will begin with pagefault */
       page_size = sysconf(_SC_PAGE_SIZE);
-      unsigned long len = temp_data.page_size * page_size;
+      unsigned long len = temp_data.page_count * page_size;
       addr = mmap(temp_data.addr, len, PROT_READ | PROT_WRITE,
 		  MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
       printf("mmap generated address %p\n", addr);
+      
       init_uffd = syscall(__NR_userfaultfd, O_CLOEXEC | O_NONBLOCK);
       if (init_uffd == -1)
 	errExit("userfaultfd");
@@ -184,7 +243,6 @@ void *client_socket(void *portnum)
   proc_info send_data; //this will primarily be used from client to send data to the other serv
   int port = atoi(portnum);
   int client_fd;
-  int pf_chk;
   /*------------------setting up sockets----------------------*/
   if ((client_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
     perror("socket failed");
@@ -212,10 +270,10 @@ void *client_socket(void *portnum)
   if(mch_num == 1) //this is the first time initialization of mmap for #1 and #2. 
     {
       printf("Enter the page count: ");
-      scanf("%lu", &send_data.page_size);
-      temp_data.page_size = send_data.page_size; //keeping temp updated as well
+      scanf("%lu", &send_data.page_count);
+      temp_data.page_count = send_data.page_count; //keeping temp updated as well
       page_size = sysconf(_SC_PAGE_SIZE);
-      unsigned long len = send_data.page_size * page_size;
+      unsigned long len = send_data.page_count * page_size;
       addr = mmap(NULL, len, PROT_READ | PROT_WRITE,
 		  MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
       send_data.addr = addr;
@@ -239,55 +297,13 @@ void *client_socket(void *portnum)
   else
     {  do { /*waiting*/ printf("waiting\n"); sleep(3); }while(addr == NULL); }  
   /*--------------------setting up menu----------------------*/
+
   pf_chk = pthread_create(&pf_thread, NULL, fault_handler_thread, (void *) init_uffd);
   if(pf_chk != 0)
     {      errno = pf_chk; errExit("pthread_create");     }
-  printf("fault handler thread has started running\n");       
+  
+
   menu();  
   return 0;
-}
-
-void* fault_handler_thread(void *arg)
-{
-        static struct uffd_msg msg;   /* Data read from userfaultfd */
-        long uffd;                    /* userfaultfd file descriptor */
-        char *page = NULL;
-        struct uffdio_copy uffdio_copy;
-        ssize_t nread;
-        uffd = (long) arg;
-        if (page == NULL) {
-                page = mmap(NULL, page_size, PROT_READ | PROT_WRITE,
-                            MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-                if (page == MAP_FAILED)
-                        errExit("mmap");
-        }
-	 for (;;) {
-          struct pollfd pollfd;
-          int nready;
-
-          pollfd.fd = uffd;
-          pollfd.events = POLLIN;
-          nready = poll(&pollfd, 1, -1);
-          if (nready == -1)
-            errExit("poll");
-          printf("\n[x] PAGEFAULT\n");
-	  nread = read(uffd, &msg, sizeof(msg));
-          if (nread == 0) {
-            printf("EOF on userfaultfd!\n");
-            exit(EXIT_FAILURE);           }
-          if (nread == -1)
-            errExit("read");
-          if (msg.event != UFFD_EVENT_PAGEFAULT) {
-            fprintf(stderr, "Unexpected event on userfaultfd\n");
-            exit(EXIT_FAILURE);          }
-          uffdio_copy.src = (unsigned long) page;
-          uffdio_copy.dst = (unsigned long) msg.arg.pagefault.address &
-            ~(temp_data.page_size - 1);
-          uffdio_copy.len = temp_data.page_size;
-          uffdio_copy.mode = 0;
-          uffdio_copy.copy = 0;
-          if (ioctl(uffd, UFFDIO_COPY, &uffdio_copy) == -1)
-            errExit("ioctl-UFFDIO_COPY");
-	}
 }
 
