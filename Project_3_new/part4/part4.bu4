@@ -136,6 +136,10 @@ void *menu(MSIList* list_MSI)
   char* message = malloc(sizeof(char));           //message allocation
   long base_addr = 0x0; //base addr used to see which page is read
   proc_info menu_data;
+  if (mch_num == 1)
+    {      menu_data = send_data;    }
+  else if (mch_num == 2)
+    {      menu_data = recv_data;    }
   do {
     if (mch_num == 1) { while((getchar()) != '\n'); }
     printf("Please enter the command < Read = r | Write = w | View = v | Quit = q > : ");
@@ -150,7 +154,7 @@ void *menu(MSIList* list_MSI)
 	if (list_MSI[index].I == true) // need to see whether this is invalid)
 	  {
 	    memset(addr + access_page, '\0',page_size);
-	    menu_data.read_signal = 1;
+	    temp_data.read_signal = 1;
 	    send(client_fd, &temp_data, sizeof(proc_info), 0); 
 	    /* send the read request signal to the server */
 	  }
