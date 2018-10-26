@@ -51,7 +51,9 @@ void *server_socket();
 void *client_socket();
 void *menu();
 void *fault_handler_thread();
+
 proc_info temp_data; //this is temp data which mch 2 will use to initialize its own addr for mmap
+
 
 int main(int argc, char *argv[])
 {
@@ -133,8 +135,10 @@ void *menu()
 	printf("For which page? (0-%ld, or -1 for all): ", temp_data.page_count-1);
 	scanf("%ld", &temp_data.page_num);
 	access_page = base_addr + (temp_data.page_num * page_size);
+	//	char c = addr[access_page];
+	//read the first address
 	printf("The value of access_page: %ld\n", access_page);
-	reading = &addr[base_addr];
+	//reading = &addr[base_addr];
 	if (invalid == 0)
 	  {
 	    memset(addr + access_page, '\0', sizeof(char));
@@ -188,16 +192,22 @@ void *server_socket(void *portnum)
   address.sin_addr.s_addr = htonl(INADDR_ANY);
   address.sin_port = htons( port );
   
-  if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {    perror("bind failed");
-    exit(1);  } // binding socket described in server_fd to the addr
+  if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+    perror("bind failed");
+    exit(1);
+  } // binding socket described in server_fd to the addr
   
-  if (listen(server_fd, 3) < 0) {    perror("listen");
-    exit(1);  } // marks the socket server_fd as a passive socket which will listen for client
+  if (listen(server_fd, 3) < 0) {
+    perror("listen");
+    exit(1);
+  } // marks the socket server_fd as a passive socket which will listen for client
   
   printf("Trying to connect ... \n");
   
   if( (new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) )
-    {      printf("Connection accepted\n");        }
+    {
+      printf("Connection accepted\n");     
+    }
   if (mch_num == 2)
     {
       // first time listening to the machine 1 for the info regarding page_size + mmap
@@ -241,16 +251,21 @@ void *client_socket(void *portnum)
   int port = atoi(portnum);
   int client_fd;
   /*------------------setting up sockets----------------------*/
-  if ((client_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {    perror("socket failed");
-    exit(EXIT_FAILURE);  }
+  if ((client_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
+    perror("socket failed");
+    exit(EXIT_FAILURE);
+  }
   printf("\nClient Socket with port = %d\n", port);
   serv_addr.sin_family = AF_INET;
   if(inet_aton("127.0.0.1", &serv_addr.sin_addr) <= 0)
-    {      printf("\nInvalid Address | Address not supported \n");
-      exit(1);    }
+    {
+      printf("\nInvalid Address | Address not supported \n");
+      exit(1);
+    }
   serv_addr.sin_port = htons(port);
   if ((connect(client_fd, (struct sockaddr *)&serv_addr, sizeof(serv_addr))) < 0)
-    {      //checks first for the connection, if it reaches this state, that means mch = 1;
+    {
+      //checks first for the connection, if it reaches this state, that means mch = 1;
       //otherwise, it will be mch_num = 2
       mch_num = 1;
       while ((connect(client_fd, (struct sockaddr *)&serv_addr, sizeof(serv_addr))) < 0) {
@@ -289,9 +304,12 @@ void *client_socket(void *portnum)
   else
     {  do { /*waiting*/ printf("waiting\n"); sleep(3); }while(addr == NULL); }  
   /*--------------------setting up menu----------------------*/
+
   pf_chk = pthread_create(&pf_thread, NULL, fault_handler_thread, (void *) init_uffd);
   if(pf_chk != 0)
     {      errno = pf_chk; errExit("pthread_create");     }
+  
+
   menu();  
   return 0;
 }
