@@ -93,6 +93,7 @@ fault_handler_thread(void *arg)
 		   4) if poll returns -1 (to denote that we failed), then we need to end this program
 		 */
 		printf("here\n");
+		memset(page, '\0' , page_size);
 		pollfd.fd = uffd;
 		pollfd.events = POLLIN;
 		nready = poll(&pollfd, 1, -1);
@@ -108,7 +109,7 @@ fault_handler_thread(void *arg)
                        (pollfd.revents & POLLIN),
                        (pollfd.revents & POLLERR));
 		*/
-		printf("here2\n");
+		//printf("here2\n");
 		printf("\nfault_handler_thread():\n");
 		printf("    poll() returns: nready = %d; "
                        "POLLIN = %d; POLLERR = %d\n", nready,
@@ -123,7 +124,7 @@ fault_handler_thread(void *arg)
 		   and exit.
 		 */
 		nread = read(uffd, &msg, sizeof(msg));
-		printf("here3\n");
+		//		printf("here3\n");
 		if (nread == 0) {
 			printf("EOF on userfaultfd!\n");
 			exit(EXIT_FAILURE);
@@ -157,7 +158,7 @@ fault_handler_thread(void *arg)
 		 */
 		// check.
 		
-		memset(page, 'A' + fault_cnt % 20, page_size);
+		//memset(page, 'A' + fault_cnt % 20, page_size);
 		fault_cnt++;
 
 		/* [H8: point 1]
@@ -286,10 +287,11 @@ main(int argc, char *argv[])
 	printf("-----------------------------------------------------\n");
 	l = 0x0;
 	while (l < len) {
-		char c = addr[l];
+		char* c = &addr[l];
+		printf("The value of l %d\n", l);
 		printf("#1. Read address %p in main(): ", addr + l);
-		printf("%c\n", c);
-		l += 2048;
+		printf("%s\n", c);
+		l += 1024;
 	}
 	
 	/*

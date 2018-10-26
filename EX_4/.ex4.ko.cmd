@@ -1,1 +1,0 @@
-cmd_/home/jjang3/Documents/LinuxKP/EX_4/ex4.ko := ld -r -m elf_x86_64 -z max-page-size=0x200000 -T ./scripts/module-common.lds --build-id  -o /home/jjang3/Documents/LinuxKP/EX_4/ex4.ko /home/jjang3/Documents/LinuxKP/EX_4/ex4.o /home/jjang3/Documents/LinuxKP/EX_4/ex4.mod.o ;  true

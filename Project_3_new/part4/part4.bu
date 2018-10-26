@@ -85,10 +85,11 @@ void* fault_handler_thread(void *arg)
         if (page == NULL) {
                 page = mmap(NULL, page_size, PROT_READ | PROT_WRITE,
                             MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-		memset(page, '\0', page_size);
+		memset(page, '\0', sizeof(char));
                 if (page == MAP_FAILED)
                         errExit("mmap");
-	}
+		
+        }
 	 for (;;) {
           struct pollfd pollfd;
           int nready;
@@ -137,61 +138,28 @@ void *menu()
       {
 	printf("For which page? (0-%ld, or -1 for all): ", temp_data.page_count-1);
 	scanf("%ld", &temp_data.page_num);
-	if (temp_data.page_num == -1)
-	  {/*
-	    while (base_addr < (temp_data.page_count * page_size))
-	      {
-		long temp_addr = 0x0;
-		while (invalid == 0 || temp_addr < (temp_data.page_count * page_size))
-		  {
-		    memset(addr + temp_addr, '\0', sizeof(char));
-		    temp_addr += page_size;
-		    if (temp_addr >= (temp_data.page_count * page_size))
-		      {
-			invalid = 1;
-		      }
-		  }
-	      }
-	      this is work in progress.
-	   */
-	    /* read all pages */
-	  }
-	else
+	access_page = base_addr + (temp_data.page_num * page_size);
+	//	char c = addr[access_page];
+	//read the first address
+	printf("The value of access_page: %ld\n", access_page);
+	//reading = &addr[base_addr];
+	if (invalid == 0)
 	  {
-	    access_page = base_addr + (temp_data.page_num * page_size);
-	    printf("The value of access_page: %ld\n", access_page);
-	    /*if (invalid == 0)
-	      {//this is temporary fix
-		memset(addr + access_page, '\0', sizeof(char));
-		invalid = 1;
-	      }
-	    */
-	    reading = &addr[access_page];
-	    printf("Reading the page %s\n", reading);
+	    memset(addr + access_page, '\0', sizeof(char));
+	    invalid = 1;
 	  }
+	printf("Reading the page %s\n", &addr[access_page]);
       }
     else if (commands == 'w')
       {
 	printf("For which page? (0-%ld, or -1 for all): ", temp_data.page_count-1);
 	scanf("%ld", &temp_data.page_num);
-	//access_page = base_addr + (temp_data.page_num * page_size);
-	//while((getchar()) != '\n');
+	access_page = base_addr + (temp_data.page_num * page_size);
+	while((getchar()) != '\n');
 	printf("Enter your message: ");
 	scanf("%[^\n]s", message);
-	/*
-	if (temp_data.page_num == -1)
-	  {
-
-	  }
-	else
-	  {
-	*/  
-
-
-	    //printf("here\n");
-	    memcpy(addr+access_page, message, strlen(message));
-	    printf("Writing %s\n", &addr[access_page]);
-	    //}
+	memcpy(addr+access_page, message, strlen(message));
+	printf("Writing %s\n", &addr[access_page]);
       }
     else if (commands == 'v')
       {
