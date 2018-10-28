@@ -381,15 +381,21 @@ void *server_socket(void *portnum)
       if ((check = read(new_socket, &recv_data , sizeof(proc_info)) <= 0))
 	{ printf("Client disconnected, exiting...\n");	  exit(1); }
       temp_data = recv_data;	
-      //      printf("\n\nReceived data as following: \n Address %p \n Page Num: %ld \n Page Count %ld \n Read Signal %d \n Pagefault Signal %d \n Invalidate Signal %d \n BusRdx Signal %d \n", addr, recv_data.page_num, recv_data.page_count, recv_data.read_signal[recv_data.page_num], recv_data.pagefault_signal[recv_data.page_num], recv_data.invalidate_signal[recv_data.page_num], recv_data.BusRdx[recv_data.page_num]);
-      //printf("Current MSI: %d %d %d\n", list_MSI[recv_data.page_num].M, list_MSI[recv_data.page_num].S, list_MSI[recv_data.page_num].I);
-      
-      if(list_MSI[recv_data.page_num].M == true && (/*recv_data.BusRdx[recv_data.page_num] == 1 ||*/ recv_data.read_signal[recv_data.page_num] == 1) )
+      //printf("\n\nReceived data as following: \n Address %p \n Page Num: %ld \n Page Count %ld \n Read Signal %d \n Pagefault Signal %d \n Invalidate Signal %d \n Data Exist Signal %d \n", addr, recv_data.page_num, recv_data.page_count, recv_data.read_signal[recv_data.page_num], recv_data.pagefault_signal[recv_data.page_num], recv_data.invalidate_signal[recv_data.page_num], recv_data.BusRdx[recv_data.page_num]);
+      if(list_MSI[recv_data.page_num].M == true  )
 	{
+	  if (recv_data.BusRdx[recv_data.page_num] == 1)
+	    {
+	      flush = &addr[temp_data.access_page];
+	      send(new_socket, flush, strlen(flush), 0);
+	      list_MSI[recv_data.page_num].M = false; 	  list_MSI[recv_data.page_num].S = false; 	  list_MSI[recv_data.page_num].I = true;
+	    }
+	  else if (recv_data.read_signal[recv_data.page_num] == 1)
+	    {	      
 	      flush = &addr[temp_data.access_page];
 	      send(new_socket, flush, strlen(flush), 0);
 	      list_MSI[recv_data.page_num].M = false; 	  list_MSI[recv_data.page_num].S = true; 	  list_MSI[recv_data.page_num].I = false;
-	   
+	    }
 	}     
       else if(list_MSI[recv_data.page_num].S == true && (recv_data.BusUpgr[recv_data.page_num] == 1 || recv_data.BusRdx[recv_data.page_num] == 1) )
 	{
@@ -403,10 +409,6 @@ void *server_socket(void *portnum)
 	  //printf("Sending no data\n");
 	  char* no_data = " ";
 	  send(new_socket, no_data, strlen(no_data), 0);
-	}
-      else if( (list_MSI[recv_data.page_num].M == true || list_MSI[recv_data.page_num].S == true) && (recv_data.read_signal[recv_data.page_num] == 0 || recv_data.invalidate_signal[recv_data.page_num] == 1) )
-	{
-	  list_MSI[recv_data.page_num].M = false; 	  list_MSI[recv_data.page_num].S = false; 	  list_MSI[recv_data.page_num].I = true;
 	}
     }
   /*-----------------need to add decoder to deal with received data-----------*/

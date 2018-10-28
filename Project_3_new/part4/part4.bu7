@@ -58,14 +58,11 @@ typedef struct {
   ssize_t page_count;
   int read_signal[MAX_SIZE];
   int pagefault_signal[MAX_SIZE];
-  int BusRdx[MAX_SIZE];
+  int data_exist_signal[MAX_SIZE];
   int invalidate_signal[MAX_SIZE];
-  int BusUpgr[MAX_SIZE];
-  int flush[MAX_SIZE];
+  int shared_signal;
   long access_page;
 } proc_info;
-
-MSIList list_MSI[MAX_SIZE];
 
 void *server_socket();
 void *client_socket();
@@ -124,7 +121,7 @@ void* fault_handler_thread(void *arg)
       {//printf("test: %d\n", temp_data.pagefault_signal[temp_data.page_num]);
 	memset(page, '\0', page_size);  }
     else
-      { printf("[x] PAGEFAULT\n\n");   }
+      { printf("\n[x] PAGEFAULT \n");   }
     nread = read(uffd, &msg, sizeof(msg));
     if (nread == 0) {
       printf("EOF on userfaultfd!\n");
@@ -145,11 +142,10 @@ void* fault_handler_thread(void *arg)
   }
 }
 //MENU
-void *menu()
+void *menu(MSIList* list_MSI)
 {
   char* reading = malloc(sizeof(char)*page_size);
   char* message = malloc(sizeof(char)*page_size);           //message allocation
-  recv_message = malloc(sizeof(char) *page_size);
   long base_addr = 0x0; //base addr used to see which page is read
   int index = -2;            //index number of MSI list
   do {
@@ -167,29 +163,35 @@ void *menu()
 	    int count;
 	    for(count = 0; count < temp_data.page_count; count++)
 	      {
-		printf("Page %d\n", count);
+		printf("Reading page %d\n", count);
 		temp_data.page_num = count;
 		temp_data.access_page = base_addr + (count * page_size);
-		//printf("Current M:%d S:%d I:%d\n", list_MSI[count].M, list_MSI[count].S, list_MSI[count].I);
 		if (list_MSI[count].I == true) // need to see whether this is invalid)
 		  {
+		    printf("I'm here\n");
 		    memset(addr + temp_data.access_page, '\0', page_size);
 		    temp_data.read_signal[count] = 1 ;       //request to read from the other machine
-		    temp_data.pagefault_signal[count] = 1;   //also tell that other machine that page fault occured at this page
-		    temp_data.invalidate_signal[count] = 0;
-		    if(temp_data.read_signal[count] == 1)
+		    temp_data.pagefault_signal[count] = 1;   //also tell that other machine that page fault occured at
+		    //this page
+		    if(temp_data.data_exist_signal[count] == 1)
 		      {
-			//printf("Sending read signal + transitioning to the shared state\n");
-			list_MSI[temp_data.page_num].I = false; list_MSI[temp_data.page_num].S = true; list_MSI[temp_data.page_num].M = false;
-		      }	
-		    send(client_fd, &temp_data, sizeof(proc_info), 0);
-		    //recv_message = '\0';
-		    read(client_fd, recv_message, sizeof(char)*page_size);
-		    temp_data.read_signal[count] = 0;
-		    printf("Reading the page %s\n", recv_message);
+			//printf("Reading the page: %s\n", recv_message);
+			memcpy(addr+temp_data.access_page, recv_message, strlen(recv_message));
+		      }
+		    else if(temp_data.read_signal[count] == 1)
+		      {
+			printf("Setting the state to shared\n");
+			list_MSI[count].I = false; list_MSI[count].S = true;
+		      }
+		    send(client_fd, &temp_data, sizeof(proc_info), 0);	    
 		  }
 		else if(list_MSI[count].S == true || list_MSI[count].M == true)
 		  {
+		    if(temp_data.data_exist_signal[count] == 1)
+		      {
+			//printf("Reading the page: %s\n", recv_message);
+			memcpy(addr+temp_data.access_page, recv_message, strlen(recv_message));
+		      }   
 		    reading = &addr[temp_data.access_page];
 		    printf("Reading the page %s\n", reading);
 		  }
@@ -198,26 +200,33 @@ void *menu()
 	else
 	  {
 	    temp_data.access_page = base_addr + (temp_data.page_num * page_size);
-	    //printf("Current MSI: %d %d %d\n", list_MSI[index].M, list_MSI[index].S, list_MSI[index].I);
+	    //printf("The value of access_page: %ld | Inv flag is: %d | Pagefault flag is: %d\n", temp_data.access_page, list_MSI[index].I, temp_data.pagefault_signal);
+	    printf("Current page MSI is %d\n", list_MSI[index].I);
 	    if (list_MSI[index].I == true) // need to see whether this is invalid)
 	      {
 		memset(addr + temp_data.access_page, '\0', page_size);
 		temp_data.read_signal[index] = 1 ;       //request to read from the other machine
-		temp_data.pagefault_signal[index] = 1;   //also tell that other machine that page fault occured at this page
-		temp_data.invalidate_signal[index] = 0;
-		if(temp_data.read_signal[index] == 1)
+		temp_data.pagefault_signal[index] = 1;   //also tell that other machine that page fault occured at
+		//this page
+		if(temp_data.data_exist_signal[index] == 1)
 		  {
-		    //printf("Sending read signal + transitioning to the shared state\n");
-		    list_MSI[temp_data.page_num].I = false; list_MSI[temp_data.page_num].S = true; list_MSI[temp_data.page_num].M = false;
-		  }	
-		 send(client_fd, &temp_data, sizeof(proc_info), 0);
-		 //recv_message = '\0';
-		 read(client_fd, recv_message, sizeof(char)*page_size);
-		 temp_data.read_signal[index] = 0;
-		 printf("Reading the page %s\n", recv_message);
+		    //printf("Reading the page: %s\n", recv_message);
+		    memcpy(addr+temp_data.access_page, recv_message, strlen(recv_message));
+		  }
+		else if(temp_data.read_signal[index] == 1)
+		  {		     
+		    list_MSI[temp_data.page_num].I = false; list_MSI[temp_data.page_num].S = true;
+		  }
+		send(client_fd, &temp_data, sizeof(proc_info), 0);
+		
 	      }
 	    else if(list_MSI[index].S == true || list_MSI[index].M == true)
 	      {
+		if(temp_data.data_exist_signal[index] == 1)
+		  {
+		    //printf("Reading the page: %s\n", recv_message);
+		    memcpy(addr+temp_data.access_page, recv_message, strlen(recv_message));
+		  }   
 		reading = &addr[temp_data.access_page];
 		printf("Reading the page %s\n", reading);
 	      }
@@ -228,77 +237,62 @@ void *menu()
 	printf("For which page? (0-%ld, or -1 for all): ", temp_data.page_count-1);
 	scanf("%ld", &temp_data.page_num);
 	index = temp_data.page_num;
-	if (index == -1)
+	list_MSI[index].M = true; 	list_MSI[index].I = false;  //changing MSI
+	temp_data.access_page = base_addr + (temp_data.page_num * page_size);
+	while((getchar()) != '\n');
+	printf("Enter your message: ");
+	scanf("%[^\n]s", message);
+	memset(addr+temp_data.access_page, '\0', 0);
+	memcpy(addr+temp_data.access_page, message, strlen(message));
+	temp_data.invalidate_signal[index] = 1; //Invalid this page for the other application.
+	temp_data.read_signal[index] = 0;       //Turning off read signal
+	temp_data.data_exist_signal[index] = 1; //Turning off data exist signal
+	temp_data.pagefault_signal[index] = 1;
+	printf("Writing %s\n", &addr[temp_data.access_page]);
+	send(client_fd, &temp_data, sizeof(proc_info), 0);
+	if (temp_data.data_exist_signal[index] == 1)
 	  {
-	    while((getchar()) != '\n');
-	    printf("Enter your message: ");
-	    scanf("%[^\n]s", message);
-	    printf("Writing to all pages\n");
-	    int count;
-	    for (count = 0; count < temp_data.page_count; count++)
-	      {
-		temp_data.page_num = count;
-		if(list_MSI[count].I == true)
-		  {	temp_data.pagefault_signal[count] = 1;
-		    temp_data.BusRdx[count] = 1;            //Turning on data exist signal
-		    temp_data.invalidate_signal[count] = 1; //Invalid this page for the other application.
-		    temp_data.read_signal[count] = 0;       //Turning off read signal
-		  }
-		else if (list_MSI[count].S == true)
-		  {	temp_data.BusUpgr[count] = 1;
-		    temp_data.invalidate_signal[count] = 1; //Invalid this page for the other application.
-		    temp_data.read_signal[count] = 0;       //Turning off read signal
-		  }
-		//printf("checking my state to modified\n");
-		list_MSI[count].M = true; 	list_MSI[count].I = false;  list_MSI[count].S = false;//changing MSI
-		temp_data.access_page = base_addr + (temp_data.page_num * page_size);
-		//while((getchar()) != '\n');
-		memcpy(addr+temp_data.access_page, message, strlen(message));
-		//printf("Writing %s\n", &addr[temp_data.access_page]);
-		send(client_fd, &temp_data, sizeof(proc_info), 0);
-	      }
-	  }
-	else
-	  {
-	    if(list_MSI[index].I == true)
-	      {	temp_data.pagefault_signal[index] = 1;
-		temp_data.BusRdx[index] = 1;            //Turning on data exist signal
-		temp_data.invalidate_signal[index] = 1; //Invalid this page for the other application.
-		temp_data.read_signal[index] = 0;       //Turning off read signal
-	      }
-	    else if (list_MSI[index].S == true)
-	      {	temp_data.BusUpgr[index] = 1;
-		temp_data.invalidate_signal[index] = 1; //Invalid this page for the other application.
-		temp_data.read_signal[index] = 0;       //Turning off read signal
-	      }
-	    printf("checking my state to modified\n");
-	    list_MSI[index].M = true; 	list_MSI[index].I = false;  list_MSI[index].S = false;//changing MSI
-	    temp_data.access_page = base_addr + (temp_data.page_num * page_size);
-	    while((getchar()) != '\n');
-	    printf("Enter your message: ");
-	    scanf("%[^\n]s", message);
-	    //memset(addr+temp_data.access_page, '\0', 0);
-	    memcpy(addr+temp_data.access_page, message, strlen(message));
-	    printf("Writing %s\n", &addr[temp_data.access_page]);
-	    send(client_fd, &temp_data, sizeof(proc_info), 0);	  	    
+	    printf("Sending %s\n", message);
+	    send(client_fd, message, strlen(message), 0);
 	  }
       }
     else if (commands == 'v')
       {
-	printf("For which page? (0-%ld, or -1 for all): ",temp_data.page_count-1);
+	printf("For which page? (0-%ld, or -1 for all): ", temp_data.page_count-1);
 	scanf("%ld", &temp_data.page_num);
 	index = temp_data.page_num;
 	if (index == -1)
 	  {
-	    printf("Viewing all pages %ld\n", temp_data.page_count);
+	    printf("Viewing all pages\n");
 	    int start = 0;
 	    while (start < temp_data.page_count)
-	      {
+	      {   if(temp_data.read_signal[start] == 1)
+		  {
+		    list_MSI[start].I = false; list_MSI[start].S = true;
+		  }
+		else if ((temp_data.invalidate_signal[start] == 1) && (list_MSI[start].M == false))
+		  {
+		    printf("Received invalidate signal\n");
+		    list_MSI[start].M = false; list_MSI[start].S = false; list_MSI[start].I = true;
+		  }
 		printf("Page #%d M:%d S:%d I:%d\n", start, list_MSI[start].M, list_MSI[start].S, list_MSI[start].I);
 		start++;	  
 	      }
 	  }
-	
+	else
+	  {
+	    int access = temp_data.page_num;
+	    if(temp_data.read_signal[access] == 1)
+	      {
+		list_MSI[access].I = false; list_MSI[access].S = true;
+	      }
+	    else if ((temp_data.invalidate_signal[access] == 1) && (list_MSI[access].M != true))
+	      {
+		printf("Received invalidate signal\n");
+		list_MSI[access].M = false; list_MSI[access].S = false; list_MSI[access].I = true;
+	      }
+	    printf("Page #%d M:%d S:%d I:%d\n", access, list_MSI[access].M, list_MSI[access].S, list_MSI[access].I);	
+	  }
       }  if (mch_num == 2) { while((getchar()) != '\n'); }
   } while (commands != 'q');
   if (commands == 'q')
@@ -311,7 +305,7 @@ void *menu()
 void *server_socket(void *portnum)
 {
     proc_info recv_data;        //data which will be received from the client
-    char* flush = malloc(sizeof(char)*page_size);
+    recv_message = malloc(sizeof(char) *page_size);
     struct sockaddr_in address; //specifying address to connect a socket
     int port = atoi(portnum);
     int opt = 1;
@@ -353,14 +347,7 @@ void *server_socket(void *portnum)
       unsigned long len = recv_data.page_count * page_size;
       addr = mmap(recv_data.addr, len, PROT_READ | PROT_WRITE,
 		  MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-      printf("mmap generated address %p\n", addr);
-      int i = 0;
-      printf("Here 2\n");
-      while (i < temp_data.page_count)
-	{ list_MSI[i].M = false; 
-	  list_MSI[i].S = false;
-	  list_MSI[i].I = true;
-	  i++;     }
+      printf("mmap generated address %p\n", addr);      
       init_uffd = syscall(__NR_userfaultfd, O_CLOEXEC | O_NONBLOCK);
       if (init_uffd == -1)
 	errExit("userfaultfd");
@@ -377,36 +364,14 @@ void *server_socket(void *portnum)
   for (;;)
     {
       int check;
-      
       if ((check = read(new_socket, &recv_data , sizeof(proc_info)) <= 0))
 	{ printf("Client disconnected, exiting...\n");	  exit(1); }
-      temp_data = recv_data;	
-      //      printf("\n\nReceived data as following: \n Address %p \n Page Num: %ld \n Page Count %ld \n Read Signal %d \n Pagefault Signal %d \n Invalidate Signal %d \n BusRdx Signal %d \n", addr, recv_data.page_num, recv_data.page_count, recv_data.read_signal[recv_data.page_num], recv_data.pagefault_signal[recv_data.page_num], recv_data.invalidate_signal[recv_data.page_num], recv_data.BusRdx[recv_data.page_num]);
-      //printf("Current MSI: %d %d %d\n", list_MSI[recv_data.page_num].M, list_MSI[recv_data.page_num].S, list_MSI[recv_data.page_num].I);
-      
-      if(list_MSI[recv_data.page_num].M == true && (/*recv_data.BusRdx[recv_data.page_num] == 1 ||*/ recv_data.read_signal[recv_data.page_num] == 1) )
-	{
-	      flush = &addr[temp_data.access_page];
-	      send(new_socket, flush, strlen(flush), 0);
-	      list_MSI[recv_data.page_num].M = false; 	  list_MSI[recv_data.page_num].S = true; 	  list_MSI[recv_data.page_num].I = false;
-	   
-	}     
-      else if(list_MSI[recv_data.page_num].S == true && (recv_data.BusUpgr[recv_data.page_num] == 1 || recv_data.BusRdx[recv_data.page_num] == 1) )
-	{
-	  //	  printf("Here\n");
-	  list_MSI[recv_data.page_num].M = false; 	  list_MSI[recv_data.page_num].S = false; 	  list_MSI[recv_data.page_num].I = true;
-	}
-      else if(list_MSI[recv_data.page_num].I == true && recv_data.read_signal[recv_data.page_num] == 1)
-	{
-	  //getting here means that there is no data since current state for this page is invalid.
-	  list_MSI[recv_data.page_num].M = false; 	  list_MSI[recv_data.page_num].S = true; 	  list_MSI[recv_data.page_num].I = false;
-	  //printf("Sending no data\n");
-	  char* no_data = " ";
-	  send(new_socket, no_data, strlen(no_data), 0);
-	}
-      else if( (list_MSI[recv_data.page_num].M == true || list_MSI[recv_data.page_num].S == true) && (recv_data.read_signal[recv_data.page_num] == 0 || recv_data.invalidate_signal[recv_data.page_num] == 1) )
-	{
-	  list_MSI[recv_data.page_num].M = false; 	  list_MSI[recv_data.page_num].S = false; 	  list_MSI[recv_data.page_num].I = true;
+      temp_data = recv_data;
+      //      printf("Received data as following: \n Address %p \n Page Num: %ld \n Page Count %ld \n Read Signal %d \n Pagefault Signal %d \n Invalidate Signal %d \n Data Exist Signal %d \n", addr, recv_data.page_num, recv_data.page_count, recv_data.read_signal, recv_data.pagefault_signal[recv_data.page_num], recv_data.invalidate_signal[recv_data.page_num], recv_data.data_exist_signal[recv_data.page_num]);
+      //printf("Server %d is still listening\n", mch_num);
+      if(recv_data.data_exist_signal[recv_data.page_num] == 1)
+	{	  read(new_socket, recv_message, sizeof(char)*page_size);
+	  //printf("Received message %s\n", recv_message);
 	}
     }
   /*-----------------need to add decoder to deal with received data-----------*/
@@ -450,13 +415,6 @@ void *client_socket(void *portnum)
       if (send_data.addr == MAP_FAILED)
 	{ printf("Failed\n"); errExit("mmap"); }
       printf("mmap generated address %p \n", addr);
-      int i = 0;
-      printf("Here 1\n");
-      while (i < temp_data.page_count)
-	{ list_MSI[i].M = false; 
-	  list_MSI[i].S = false;
-	  list_MSI[i].I = true;
-	  i++;     }
       send(client_fd, &send_data, sizeof(proc_info), 0);
       init_uffd = syscall(__NR_userfaultfd, O_CLOEXEC | O_NONBLOCK);
       if (init_uffd == -1)
@@ -472,12 +430,19 @@ void *client_socket(void *portnum)
 	errExit("ioctl-UFFDIO_REGISTER");
     }
   else
-    {  do { /*waiting*/ printf("waiting\n"); sleep(1); }while(addr == NULL); }  
+    {  do { /*waiting*/ printf("waiting\n"); sleep(3); }while(addr == NULL); }  
   /*--------------------setting up menu----------------------*/
   pf_chk = pthread_create(&pf_thread, NULL, fault_handler_thread, (void *) init_uffd);
   if(pf_chk != 0)
     {      errno = pf_chk; errExit("pthread_create");     }
-  menu();  
+  MSIList states_list[temp_data.page_count];
+  int i = 0;
+  while (i < temp_data.page_count)
+    { states_list[i].M = false; 
+      states_list[i].S = false;
+      states_list[i].I = true;
+      i++;     }
+  menu(states_list);  
   return 0;
 }
 
