@@ -1,0 +1,9 @@
+#!/bin/sh
+
+sudo insmod proj4.ko
+cat /proc/proj4
+rmmod proj4
+dmesg
+
+#dmesg -c > cleaned
+
