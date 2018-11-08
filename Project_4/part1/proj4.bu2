@@ -19,19 +19,26 @@ void recursive_search(struct task_struct *task, int space)
 {
   struct list_head *list;
   struct task_struct *holder_task;
-  int space_num = space;
   int i;
-  
-  for(i = 1; i < space_num; i++)
-    {
-      printk(KERN_CONT "  ");
-    }
-  printk(KERN_CONT "-%s[%d]\n", task->comm, task->pid);
-  space_num++;  
+  char* sp = "";
+  int space_num = space;
+
+  printk("Current space_num: %d", space_num);
+  /*
+  for (i = 0; i < space_num; i++)    {
+    strcat(sp, " ");
+    printk("Current space:1%s1", sp);
+  }
+  */
+  printk("%s[%d]\n" ,task->comm, task->pid);
   list_for_each(list, &task->children)    {
+    //printk("I'm here\n");
+    printk("Current space num: %d", space_num);
     holder_task = list_entry(list, struct task_struct, sibling);
     recursive_search(holder_task, space_num);
-  }  
+  }
+  space_num++;
+  
 }
 
 
@@ -41,8 +48,18 @@ static int proj4_proc_show(struct seq_file *m, void *v)
   struct list_head *list;
   int space = 0;
   
-  printk("Loading proctree Module...\n");
+  printk("Loading proctree Module...");
+  //printk("%s[%d]\n", (task->comm), task->pid); // swapper is not shown on the for_each_process due
+                                               // semantics.
   recursive_search(task, space);
+  /*
+  for_each_process(task)
+    {
+      printk("%s[%d]\n", (task->comm), task->pid);
+      }
+    }\
+  */
+
   return 0;
   
 }
