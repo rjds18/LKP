@@ -177,7 +177,7 @@ static struct file_system_type s2fs_type = {
 					       .owner = THIS_MODULE,
 					       .name  = "s2fs",
 					       .mount = s2fs_mount,
-					       .kill_sb = kill_block_super,
+					       .kill_sb = kill_litter_super,
 					       .fs_flags = FS_REQUIRES_DEV,
 };
 
