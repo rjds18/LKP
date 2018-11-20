@@ -15,8 +15,6 @@
 #include <asm/uaccess.h>
 #include <asm/atomic.h>
 
-//#include <stdio.h>
-
 #define TMPSIZE 17
 #define s2fs_MAGIC 0x8BA491f6
 
@@ -29,16 +27,18 @@ static struct dentry *s2fs_mount(struct file_system_type *fs_type, int flags,
 
 
 /*-------------------filesystem operations------------------*/
-struct inode *s2fs_make_inode(struct super_block *sb,
+static struct inode *s2fs_make_inode(struct super_block *sb,
 			     int mode)
 {
   struct inode *inode = new_inode(sb);
   if (inode)
     {
+      //      inode->i_ino = 0;
       inode->i_ino = get_next_ino();
       inode->i_mode = mode;
       inode->i_sb = sb;
       inode->i_atime = inode->i_mtime = inode->i_ctime = current_time(inode);
+      inode_init_owner(inode, NULL, S_IFDIR);
     }
   return inode;
 }
@@ -51,12 +51,16 @@ static int s2fs_open(struct inode *inode, struct file *filp)
 
 static ssize_t s2fs_read_file(struct file *filp, char *buf, size_t count, loff_t *offset)
 {
-  int len;
+  atomic_t *counter = (atomic_t *) filp->private_data;
+  int v, len;
   char tmp[TMPSIZE];
-  char *hello = "Hello World!";
-  
-  len = snprintf(tmp, TMPSIZE, "%s\n", hello);
 
+  v = atomic_read(counter);
+  if (*offset > 0)
+    v -= 1;
+  else
+    atomic_inc(counter);
+  len = snprintf(tmp, TMPSIZE, "%d\n", v);
   if (*offset > len)
     return 0;
   if (count > len - *offset)
@@ -66,7 +70,6 @@ static ssize_t s2fs_read_file(struct file *filp, char *buf, size_t count, loff_t
     return -EFAULT;
   *offset += count;
   return count;
-
 }
 
 static ssize_t s2fs_write_file(struct file *filp, const char *buf, size_t count, loff_t *offset)
@@ -95,51 +98,51 @@ static struct file_operations s2fs_fops = {
 };
 
 static struct dentry *s2fs_create_dir(struct super_block *sb, struct dentry *parent, const char *dir_name)
-{
-        struct dentry *dentry = parent;
-        struct inode *inode;
-        struct qstr qname;
+{ 
+	struct dentry *dentry;
+	struct inode *inode;
+	struct qstr qname;
 
-        qname.name = dir_name;
-        qname.len = strlen (dir_name);
-        qname.hash = full_name_hash(dentry, dir_name, qname.len);
-        dentry = d_alloc(dentry, &qname);
-        if (! dentry)
-          goto out;
+	qname.name = dir_name;
+	qname.len = strlen (dir_name);
+	qname.hash = full_name_hash(NULL, dir_name, qname.len);
+	dentry = d_alloc(parent, &qname);
+	if (! dentry)
+	  goto out;
 
-        inode = s2fs_make_inode(sb, S_IFDIR | 0644);
-        if (! inode)
-          goto out_dput;
-        inode->i_op = &simple_dir_inode_operations;
-        inode->i_fop = &simple_dir_operations;
+	inode = s2fs_make_inode(sb, S_IFDIR | 0644);
+	if (! inode)
+	  goto out_dput;
+	inode->i_op = &simple_dir_inode_operations;
+	inode->i_fop = &simple_dir_operations;
 
-        d_add(dentry, inode);
-        return dentry;
+	d_add(dentry, inode);
+	return dentry;
 
  out_dput:
-        dput(dentry);
+	dput(dentry);
  out:
-        return 0;
+	return 0;
+ 
 }
 
-
-static struct dentry *s2fs_create_file (struct super_block *sb,
-		struct dentry *dir, const char *file_name)
+static struct dentry *s2fs_create_file(struct super_block *sb, struct dentry *dir, const char *file_name)
 {
-	struct dentry *dentry = dir;
+	struct dentry *dentry;
 	struct inode *inode;
 	struct qstr qname;
 	qname.name = file_name;
 	qname.len = strlen (file_name);
-	qname.hash = full_name_hash(dentry, file_name, qname.len);
+	qname.hash = full_name_hash(NULL, file_name, qname.len);
 	
-	dentry = d_alloc(dentry, &qname);
+	dentry = d_alloc(dir, &qname);
 	if (! dentry)
 		goto out;
-	inode = s2fs_make_inode(sb, 0x8000);
+	inode = s2fs_make_inode(sb, 0);
 	if (! inode)
 		goto out_dput;
 	inode->i_fop = &s2fs_fops;
+	//inode->i_private = counter;
 	
 	d_add(dentry, inode);
 	return dentry;
@@ -163,17 +166,18 @@ static const struct super_operations s2fs_ops = {
 						 .put_super = s2fs_put_super,
 };
 
+//static atomic_t counter, subcounter;
+
 static int s2fs_fill_super(struct super_block *sb, void *data, int silent)
 {
-  struct inode *root;
-
+  struct inode *root = NULL;
   struct dentry *root_dentry;
   struct dentry *sub_dentry;
   
   sb->s_magic = s2fs_MAGIC;
   sb->s_op = &s2fs_ops;  
 
-  root = s2fs_make_inode(sb, S_IFDIR | 0755);
+  root = s2fs_make_inode(sb, 0);
   if (!root)
     {
       pr_err("inode allocation failed\n");
@@ -181,25 +185,27 @@ static int s2fs_fill_super(struct super_block *sb, void *data, int silent)
     }
   root->i_op = &simple_dir_inode_operations;
   root->i_fop = &simple_dir_operations;
-
+  
   root_dentry = d_make_root(root);
-  sb->s_root = root_dentry;
-
-  //sb->s_root = d_make_root(root);
   if (!sb->s_root)
     {
       pr_err("root creation failed\n");
       return -ENOMEM;
     }
 
+  sb->s_root = root_dentry;
 
-  sub_dentry = s2fs_create_dir(sb, root_dentry, "foo");
-  if (sub_dentry)
-    {
-      printk("in the if loop\n");
-      s2fs_create_file(sb, sub_dentry, "bar");
-    }
+  /*
+  atomic_set(&counter, 0);
+  s2fs_create_file(sb, root_dentry, "counter");
+
+  atomic_set(&subcounter,0);
   
+  
+  sub_dentry = s2fs_create_dir(sb, root_dentry, "foo");
+  if(sub_dentry)
+    s2fs_create_file(sb, sub_dentry, "bar");
+  */
   return 0;
 }
 
@@ -242,7 +248,7 @@ void recursive_search(struct task_struct *task, int space)
     recursive_search(holder_task, space_num);
   }  
 }
-/*
+
 static int part1_proc_show(struct seq_file *m, void *v)
 {
   struct task_struct *task = &init_task; // getting global current pointer to the swapper
@@ -255,7 +261,6 @@ static int part1_proc_show(struct seq_file *m, void *v)
 static int part1_proc_open(struct inode *inode, struct file *file) {
   return single_open(file, part1_proc_show, NULL);
 }
-*/
 
 static int __init s2fs_init(void)
 {
