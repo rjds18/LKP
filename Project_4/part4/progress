@@ -239,7 +239,6 @@ void *recursive_add(struct task_struct *task, int space, struct super_block *sb_
   else
     {
       sub_dentry = s2fs_create_dir(sb_inp, rootd, file_name);
-      s2fs_create_file(sb_inp, sub_dentry, file_name);
       list_for_each(list, &task->children)    {
 	//s2fs_create_file(sb_inp, sub_dentry, file_name);
      	holder_task = list_entry(list, struct task_struct, sibling);
