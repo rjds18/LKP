@@ -33,16 +33,17 @@ static struct dentry *s2fs_mount(struct file_system_type *fs_type, int flags,
 void *recursive_add(struct task_struct *task, int space, struct super_block *sb_inp, struct dentry *rootd);
 /*-------------------filesystem operations------------------*/
 struct inode *s2fs_make_inode(struct super_block *sb,
-			      int mode, pid_t pid)
+			      int mode, int *pid)
 {
   struct inode *inode = new_inode(sb);
   if (inode)
     {
+      printk("pid %d\n", *pid);
       inode->i_ino = get_next_ino();
       inode->i_mode = mode;
       inode->i_sb = sb;
       inode->i_atime = inode->i_mtime = inode->i_ctime = current_time(inode);
-      inode->i_private = &pid;
+      inode->i_private = pid;
     }
   return inode;
 }
@@ -53,14 +54,35 @@ static int get_task_info(int pid, char* data)
   int len;
   struct pid *struct_pid = find_get_pid(pid);
   struct task_struct *task_pid = pid_task(struct_pid, PIDTYPE_PID);
-  
-  if (task_pid == NULL)
+  printk("%p %p\n", (struct_pid), task_pid);
+  if (task_pid != NULL || struct_pid != NULL)
     {
-
-      return -1;
+      //printk("Here %p %p\n", data, task_pid, struct_pid);
+      len = snprintf(data, TMPSIZE, "Task Name: %s\nTask State: %ld\nPID: %d\nTGID: %d\nPPID: %d\nStart Time: %lld\nDynamic Priorty: %d\nStatic Priorty: %d\nNormal Priorty: %d\nRTime Priorty: %d\nMmap Base: %ld\nVMemory Space: %ld\nVMemory Usage: %d\nNo. of VMA: %d\nTotal Pages Mapped: %ld\n",
+		     task_pid->comm ,
+		     task_pid->state ,
+		     task_pid_vnr(task_pid) ,
+		     task_tgid_nr(task_pid) ,
+		     task_tgid_vnr(rcu_dereference(task_pid->real_parent)) ,
+		     task_pid->start_time ,
+		     task_pid->prio ,
+		     task_pid->static_prio ,
+		     task_pid->normal_prio ,
+		     task_pid->rt_priority ,
+		     task_pid->mm->mmap_base ,
+		     task_pid->mm->task_size ,
+		     atomic_read(&(task_pid->mm->mm_count)) ,
+		     task_pid->mm->map_count ,
+		     task_pid->mm->total_vm
+		     
+		     );
+      return len;      
     }
   else
     {
+      printk("Hello..?\n");
+      len = snprintf(data, TMPSIZE, "Task no longer exists\n");
+      return -1;
       /*
 	printk(KERN_INFO "Task Name: %s\n", task_pid->comm);
 	printk(KERN_INFO "Task State: %ld\n", task_pid->state);
@@ -78,10 +100,9 @@ static int get_task_info(int pid, char* data)
 	printk(KERN_INFO "No. of Virtual Memory Address: %d\n", task_pid->mm->map_count);
 	printk(KERN_INFO "Total Pages Mapped: %ld\n", task_pid->mm->total_vm);
       */
-      len = snprintf(data, TMPSIZE, "Task Name: %s\nTask State: %ld\nPID: %d\nTGID: %d\nPPID: %d\nStart Time: %lld\nDynamic Priorty: %d\nStatic Priorty: %d\nNormal Priorty: %d\nRTime Priorty: %d\nMmap Base: %ld\nVMemory Space: %ld\nVMemory Usage: %d\nNo. of VMA: %d\nTotal Pages Mapped: %ld\n", task_pid->comm, task_pid->state, task_pid_vnr(task_pid), task_tgid_nr(task_pid), task_tgid_vnr(rcu_dereference(task_pid->real_parent)),task_pid->start_time,task_pid->prio, task_pid->static_prio, task_pid->normal_prio, task_pid->rt_priority, task_pid->mm->mmap_base, task_pid->mm->task_size, atomic_read(&(task_pid->mm->mm_count)), task_pid->mm->map_count, task_pid->mm->total_vm);
     }
   
-  return len;
+
 }
 
 
@@ -95,22 +116,19 @@ static ssize_t s2fs_read_file(struct file *filp, char *buf, size_t count, loff_t
 {
   int len;
   char tmp[TMPSIZE];
-  int pid_input;
+  int pid_input = 0;
+  int result = 0;
   char *pid_num = filp->f_path.dentry->d_iname; // this returns pid number
   //struct qstr file_name = filp->f_path.dentry->d_name;  
   //len = snprintf(tmp, TMPSIZE, "Task name: %s\n", file_name); //getting the length of string
   //loff_t is the current reading position of the file
-  kstrtoint(pid_num, TMPSIZE, &pid_input);
-  //printk("Reading PID: %d\n", pid_input);
-  if (pid_num > 0)
-    {
-      len = get_task_info(pid_input, tmp);
-    }
-  else
-    {
-      return -1;
-    }
-  
+  result = kstrtoint(pid_num, 10, &pid_input);
+  //printk("PID char read is: %s\n", pid_num);
+  //printk("PID int read is %d %d\n", result, pid_input);
+
+  //printk("Hello %d\n", pid_input);
+  len = get_task_info(pid_input, tmp);
+
   if (*offset > len)
     return 0;
   if (count > len - *offset)
@@ -120,10 +138,8 @@ static ssize_t s2fs_read_file(struct file *filp, char *buf, size_t count, loff_t
   if (copy_to_user(buf, tmp + *offset, count)) 
     return -EFAULT;
   *offset += count;
-
   //printk("Count is %ld\n", count);    
   return count;
-  
 }
 
 static ssize_t s2fs_write_file(struct file *filp, const char *buf, size_t count, loff_t *offset)
@@ -151,7 +167,7 @@ static struct file_operations s2fs_fops = {
        .write = s2fs_write_file,
 };
 
-static struct dentry *s2fs_create_dir(struct super_block *sb, struct dentry *parent, const char *dir_name, pid_t pid)
+static struct dentry *s2fs_create_dir(struct super_block *sb, struct dentry *parent, const char *dir_name, int pid)
 {
         struct dentry *dentry = parent;
         struct inode *inode;
@@ -163,8 +179,8 @@ static struct dentry *s2fs_create_dir(struct super_block *sb, struct dentry *par
         dentry = d_alloc(dentry, &qname);
         if (! dentry)
           goto out;
-
-        inode = s2fs_make_inode(sb, S_IFDIR | 0644, pid); //user can read | write + group can read + other can read
+	//int test = 17;
+        inode = s2fs_make_inode(sb, S_IFDIR | 0644, &pid); //user can read | write + group can read + other can read
         if (! inode)
           goto out_dput;
         inode->i_op = &simple_dir_inode_operations;
@@ -181,11 +197,12 @@ static struct dentry *s2fs_create_dir(struct super_block *sb, struct dentry *par
 
 
 static struct dentry *s2fs_create_file (struct super_block *sb,
-					struct dentry *dir, const char *file_name, pid_t pid)
+					struct dentry *dir, const char *file_name, int pid)
 {
 	struct dentry *dentry = dir;
 	struct inode *inode;
 	struct qstr qname; //quick string
+
 	qname.name = file_name;
 	qname.len = strlen (file_name);
 	qname.hash = full_name_hash(dentry, file_name, qname.len); //same business as before.
@@ -193,7 +210,8 @@ static struct dentry *s2fs_create_file (struct super_block *sb,
 	dentry = d_alloc(dentry, &qname); //allocate a dcache entry
 	if (!dentry)
 		goto out;
-	inode = s2fs_make_inode(sb, 0x8000, pid); //0x8000 is a defined i_mode value for regular file.
+	//	int test = 17;
+	inode = s2fs_make_inode(sb, 0x8000, &pid); //0x8000 is a defined i_mode value for regular file.
 	if (!inode)
 		goto out_dput;
 	inode->i_fop = &s2fs_fops;
@@ -230,15 +248,21 @@ static int s2fs_fill_super(struct super_block *sb, void *data, int silent)
   //struct list_head *list;
   int space = 0;
   char file_name[10];
+  int pid_input;
   task = &init_task;
+  pid_input = (int)task->pid;
   snprintf(file_name, 10, "%i", task->pid);
+
 
   //  printk("Loading proctree Module...\n The process is \"%s\" (pid %i)\n", task->comm, task->pid);
     
   sb->s_magic = s2fs_MAGIC;
   sb->s_op = &s2fs_ops;  
 
-  root = s2fs_make_inode(sb, S_IFDIR | 0755, task->pid);
+  //  int test = 17;
+
+  
+  root = s2fs_make_inode(sb, S_IFDIR | 0755, &pid_input);
   if (!root)
     {
       pr_err("inode allocation failed\n");
@@ -283,12 +307,12 @@ void *recursive_add(struct task_struct *task, int space, struct super_block *sb_
   if(list_empty(&task->children))
     {
       //printk(KERN_CONT "This process has no children\n");
-      s2fs_create_file(sb_inp, rootd, file_name, task->pid);
+      s2fs_create_file(sb_inp, rootd, file_name, (int)task->pid);
     }
   else
     {
-      sub_dentry = s2fs_create_dir(sb_inp, rootd, file_name, task->pid);
-      s2fs_create_file(sb_inp, sub_dentry, file_name, task->pid);
+      sub_dentry = s2fs_create_dir(sb_inp, rootd, file_name, (int)task->pid);
+      s2fs_create_file(sb_inp, sub_dentry, file_name, (int)task->pid);
       list_for_each(list, &task->children)    {
 	//s2fs_create_file(sb_inp, sub_dentry, file_name);
      	holder_task = list_entry(list, struct task_struct, sibling);
